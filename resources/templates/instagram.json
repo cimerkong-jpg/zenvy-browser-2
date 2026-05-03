@@ -1,0 +1,27 @@
+{
+  "name": "Instagram",
+  "description": "Optimized for Instagram with mobile-friendly settings",
+  "icon": "📸",
+  "fingerprint": {
+    "os": "macOS",
+    "userAgent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+    "timezone": "America/Los_Angeles",
+    "language": "en-US",
+    "screenWidth": 1920,
+    "screenHeight": 1080,
+    "hardwareConcurrency": 8,
+    "deviceMemory": 8,
+    "webRTC": "disabled",
+    "canvas": "noise",
+    "webGL": "noise",
+    "deviceName": "",
+    "macAddress": ""
+  },
+  "proxy": {
+    "type": "none",
+    "host": "",
+    "port": "",
+    "username": "",
+    "password": ""
+  }
+}

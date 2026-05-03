@@ -1,0 +1,9 @@
+node_modules/
+out/
+dist/
+.vite/
+.DS_Store
+*.local
+.claude/settings.local.json
+.claude/CLAUDE.local.md
+.codex/logs/

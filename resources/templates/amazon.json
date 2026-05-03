@@ -1,0 +1,27 @@
+{
+  "name": "Amazon",
+  "description": "Optimized for Amazon shopping with US Eastern timezone",
+  "icon": "📦",
+  "fingerprint": {
+    "os": "Windows",
+    "userAgent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+    "timezone": "America/New_York",
+    "language": "en-US",
+    "screenWidth": 1920,
+    "screenHeight": 1080,
+    "hardwareConcurrency": 8,
+    "deviceMemory": 8,
+    "webRTC": "disabled",
+    "canvas": "noise",
+    "webGL": "noise",
+    "deviceName": "",
+    "macAddress": ""
+  },
+  "proxy": {
+    "type": "none",
+    "host": "",
+    "port": "",
+    "username": "",
+    "password": ""
+  }
+}

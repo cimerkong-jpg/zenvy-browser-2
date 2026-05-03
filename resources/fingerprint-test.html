@@ -1,0 +1,287 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Kiểm tra Fingerprint - Zenvy Browser</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            padding: 20px;
+        }
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+        }
+        h1 {
+            color: white;
+            text-align: center;
+            margin-bottom: 30px;
+            font-size: 2.5em;
+        }
+        .grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(350px, 1fr));
+            gap: 20px;
+        }
+        .card {
+            background: white;
+            border-radius: 12px;
+            padding: 20px;
+            box-shadow: 0 10px 30px rgba(0,0,0,0.2);
+        }
+        .card h2 {
+            color: #667eea;
+            margin-bottom: 15px;
+            font-size: 1.3em;
+            border-bottom: 2px solid #667eea;
+            padding-bottom: 10px;
+        }
+        .info-row {
+            display: flex;
+            justify-content: space-between;
+            padding: 8px 0;
+            border-bottom: 1px solid #f0f0f0;
+        }
+        .info-row:last-child { border-bottom: none; }
+        .label {
+            font-weight: 600;
+            color: #555;
+        }
+        .value {
+            color: #333;
+            font-family: 'Courier New', monospace;
+            font-size: 0.9em;
+        }
+        .status {
+            display: inline-block;
+            padding: 4px 12px;
+            border-radius: 20px;
+            font-size: 0.85em;
+            font-weight: 600;
+        }
+        .status.pass { background: #10b981; color: white; }
+        .status.fail { background: #ef4444; color: white; }
+        .status.warning { background: #f59e0b; color: white; }
+        .canvas-test {
+            margin-top: 10px;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+        }
+    </style>
+    <script src="webrtc-inject.js"></script>
+</head>
+<body>
+    <div class="container">
+        <h1>🔍 Kiểm tra Fingerprint Antidetect</h1>
+        <div class="grid" id="results">
+            <div class="card" style="grid-column: 1 / -1; text-align: center;">
+                <h2>⏳ Đang tải...</h2>
+                <p>Vui lòng đợi trong giây lát</p>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        console.log('🔍 Starting fingerprint test...');
+        console.log('Document ready state:', document.readyState);
+        console.log('Navigator:', navigator);
+        
+        // Clear loading message immediately
+        document.getElementById('results').innerHTML = '';
+        
+        const results = [];
+
+        // 1. User Agent
+        results.push({
+            title: 'User Agent',
+            items: [
+                { label: 'User Agent', value: navigator.userAgent },
+                { label: 'Platform', value: navigator.platform },
+                { label: 'Vendor', value: navigator.vendor }
+            ]
+        });
+
+        // 2. WebDriver Detection
+        const webdriverDetected = navigator.webdriver || window.document.documentElement.getAttribute('webdriver') === 'true';
+        results.push({
+            title: 'WebDriver Detection',
+            items: [
+                { label: 'navigator.webdriver', value: navigator.webdriver ? '❌ Detected' : '✅ Not detected', status: navigator.webdriver ? 'fail' : 'pass' },
+                { label: 'Automation', value: webdriverDetected ? '❌ Detected' : '✅ Clean', status: webdriverDetected ? 'fail' : 'pass' }
+            ]
+        });
+
+        // 3. Hardware
+        results.push({
+            title: 'Hardware Info',
+            items: [
+                { label: 'CPU Cores', value: navigator.hardwareConcurrency || 'N/A' },
+                { label: 'Device Memory', value: navigator.deviceMemory ? `${navigator.deviceMemory} GB` : 'N/A' },
+                { label: 'Screen', value: `${screen.width}x${screen.height}` },
+                { label: 'Color Depth', value: `${screen.colorDepth}-bit` }
+            ]
+        });
+
+        // 4. Language & Timezone
+        results.push({
+            title: 'Language & Timezone',
+            items: [
+                { label: 'Language', value: navigator.language },
+                { label: 'Languages', value: navigator.languages.join(', ') },
+                { label: 'Timezone', value: Intl.DateTimeFormat().resolvedOptions().timeZone },
+                { label: 'Timezone Offset', value: `UTC${new Date().getTimezoneOffset() / -60}` }
+            ]
+        });
+
+        // 5. WebRTC
+        const hasWebRTC = !!(window.RTCPeerConnection || window.webkitRTCPeerConnection || window.mozRTCPeerConnection);
+        results.push({
+            title: 'WebRTC',
+            items: [
+                { label: 'WebRTC Available', value: hasWebRTC ? '⚠️ Enabled' : '✅ Disabled', status: hasWebRTC ? 'warning' : 'pass' },
+                { label: 'RTCPeerConnection', value: window.RTCPeerConnection ? 'Yes' : 'No' }
+            ]
+        });
+
+        // 6. Canvas Fingerprint
+        let canvasHash = 'N/A';
+        let canvasElement = null;
+        try {
+            const canvas = document.createElement('canvas');
+            const ctx = canvas.getContext('2d');
+            canvas.width = 200;
+            canvas.height = 50;
+            ctx.textBaseline = 'top';
+            ctx.font = '14px Arial';
+            ctx.fillStyle = '#f60';
+            ctx.fillRect(125, 1, 62, 20);
+            ctx.fillStyle = '#069';
+            ctx.fillText('Zenvy Test 🔒', 2, 15);
+            ctx.fillStyle = 'rgba(102, 204, 0, 0.7)';
+            ctx.fillText('Antidetect', 4, 17);
+            const canvasData = canvas.toDataURL();
+            canvasHash = canvasData.substring(0, 50);
+            canvasElement = canvas;
+        } catch (e) {
+            console.warn('Canvas toDataURL blocked:', e.message);
+            canvasHash = 'Protected (Canvas noise active)';
+        }
+
+        results.push({
+            title: 'Canvas Fingerprint',
+            items: [
+                { label: 'Canvas Hash', value: canvasHash + (canvasHash !== 'N/A' && !canvasHash.includes('Protected') ? '...' : ''), status: 'pass' },
+                { label: 'Status', value: canvasHash.includes('Protected') ? '✅ Noise Active' : '✅ Unique', status: 'pass' }
+            ],
+            extra: canvasElement
+        });
+
+        // 7. WebGL
+        const gl = document.createElement('canvas').getContext('webgl');
+        const debugInfo = gl ? gl.getExtension('WEBGL_debug_renderer_info') : null;
+        const vendor = debugInfo ? gl.getParameter(debugInfo.UNMASKED_VENDOR_WEBGL) : 'N/A';
+        const renderer = debugInfo ? gl.getParameter(debugInfo.UNMASKED_RENDERER_WEBGL) : 'N/A';
+
+        results.push({
+            title: 'WebGL Info',
+            items: [
+                { label: 'Vendor', value: vendor },
+                { label: 'Renderer', value: renderer },
+                { label: 'WebGL Available', value: gl ? 'Yes' : 'No' }
+            ]
+        });
+
+        // 8. Plugins & Extensions
+        results.push({
+            title: 'Plugins',
+            items: [
+                { label: 'Plugin Count', value: navigator.plugins.length },
+                { label: 'PDF Viewer', value: navigator.pdfViewerEnabled ? 'Yes' : 'No' }
+            ]
+        });
+
+        // 9. Permissions
+        results.push({
+            title: 'Permissions API',
+            items: [
+                { label: 'Permissions', value: navigator.permissions ? '✅ Available' : '❌ Not available' },
+                { label: 'Notification', value: Notification.permission }
+            ]
+        });
+
+        // 10. Battery (if available)
+        if (navigator.getBattery) {
+            navigator.getBattery().then(battery => {
+                const batteryCard = document.createElement('div');
+                batteryCard.className = 'card';
+                batteryCard.innerHTML = `
+                    <h2>Battery Status</h2>
+                    <div class="info-row"><span class="label">Level</span><span class="value">${Math.round(battery.level * 100)}%</span></div>
+                    <div class="info-row"><span class="label">Charging</span><span class="value">${battery.charging ? 'Yes' : 'No'}</span></div>
+                `;
+                document.getElementById('results').appendChild(batteryCard);
+            });
+        }
+
+        // Render results
+        const container = document.getElementById('results');
+        results.forEach(result => {
+            const card = document.createElement('div');
+            card.className = 'card';
+            
+            let html = `<h2>${result.title}</h2>`;
+            result.items.forEach(item => {
+                const statusClass = item.status ? `<span class="status ${item.status}">${item.status.toUpperCase()}</span>` : '';
+                html += `
+                    <div class="info-row">
+                        <span class="label">${item.label}</span>
+                        <span class="value">${item.value} ${statusClass}</span>
+                    </div>
+                `;
+            });
+            
+            card.innerHTML = html;
+            
+            if (result.extra) {
+                result.extra.className = 'canvas-test';
+                card.appendChild(result.extra);
+            }
+            
+            container.appendChild(card);
+        });
+
+        // Overall Score
+        const scoreCard = document.createElement('div');
+        scoreCard.className = 'card';
+        scoreCard.style.gridColumn = '1 / -1';
+        scoreCard.style.background = 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)';
+        scoreCard.style.color = 'white';
+        
+        const automationDetected = webdriverDetected;
+        const webrtcEnabled = hasWebRTC;
+        const score = automationDetected ? 0 : (webrtcEnabled ? 70 : 100);
+        
+        scoreCard.innerHTML = `
+            <h2 style="color: white; border-color: white;">Điểm Antidetect: ${score}/100</h2>
+            <div class="info-row" style="border-color: rgba(255,255,255,0.3)">
+                <span class="label" style="color: white;">Automation Detected</span>
+                <span class="value" style="color: white;">${automationDetected ? '❌ Yes' : '✅ No'}</span>
+            </div>
+            <div class="info-row" style="border-color: rgba(255,255,255,0.3)">
+                <span class="label" style="color: white;">WebRTC Leak</span>
+                <span class="value" style="color: white;">${webrtcEnabled ? '⚠️ Possible' : '✅ Protected'}</span>
+            </div>
+            <div class="info-row" style="border-color: rgba(255,255,255,0.3)">
+                <span class="label" style="color: white;">Overall Status</span>
+                <span class="value" style="color: white;">${score >= 90 ? '✅ Excellent' : score >= 70 ? '⚠️ Good' : '❌ Poor'}</span>
+            </div>
+        `;
+        
+        container.appendChild(scoreCard);
+    </script>
+</body>
+</html>

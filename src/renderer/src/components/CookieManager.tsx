@@ -108,7 +108,7 @@ export default function CookieManager({ profileId, onClose }: Props) {
                     <div className="flex items-center gap-3 mb-1">
                       <span className="font-semibold">{cookie.name}</span>
                       <span className="text-xs text-white/40">{cookie.domain}</span>
-                      {cookie.secure && <span className="text-xs bg-green-500/20 px-2 py-0.5 rounded">🔒 Secure</span>}
+                      {cookie.secure && <span className="text-xs bg-purple-500/20 px-2 py-0.5 rounded">🔒 Secure</span>}
                       {cookie.httpOnly && <span className="text-xs bg-blue-500/20 px-2 py-0.5 rounded">HTTP Only</span>}
                     </div>
                     <div className="text-sm text-white/60 truncate max-w-[600px]">

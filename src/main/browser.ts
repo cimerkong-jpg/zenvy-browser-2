@@ -1,11 +1,29 @@
-import { app } from 'electron'
+import { app, BrowserWindow } from 'electron'
 import { join } from 'path'
-import { spawn, ChildProcess } from 'child_process'
+import { spawn, ChildProcess, exec } from 'child_process'
 import { readFileSync, writeFileSync, existsSync } from 'fs'
 import type { Profile } from '../shared/types'
 import { getFontsByOS } from './fingerprints/fonts'
 
-const runningProfiles = new Map<string, ChildProcess>()
+const runningProfiles = new Map<string, { process: ChildProcess; pid?: number }>()
+
+// Helper to promisify exec
+function execAsync(command: string): Promise<{ stdout: string; stderr: string }> {
+  return new Promise((resolve, reject) => {
+    exec(command, (error, stdout, stderr) => {
+      if (error) reject(error)
+      else resolve({ stdout, stderr })
+    })
+  })
+}
+
+// Notify renderer when profile status changes
+function notifyProfileStatusChange(profileId: string, isRunning: boolean) {
+  const windows = BrowserWindow.getAllWindows()
+  if (windows.length > 0) {
+    windows[0].webContents.send('browser:status-changed', { profileId, isRunning })
+  }
+}
 
 function getChromePath(): string {
   switch (process.platform) {
@@ -29,6 +47,12 @@ function injectSpoofScripts(profile: Profile, testPagePath: string): string {
 
   let htmlContent = readFileSync(testPagePath, 'utf-8')
   const scripts: string[] = []
+
+  // WebRTC blocker - Always inject if WebRTC is disabled
+  if (profile.fingerprint.webRTC === 'disabled') {
+    const webrtcScript = readFileSync(join(resourcesDir, 'webrtc-inject.js'), 'utf-8')
+    scripts.push(webrtcScript)
+  }
 
   // Fonts spoof
   if (profile.fingerprint.fonts) {
@@ -60,9 +84,11 @@ function injectSpoofScripts(profile: Profile, testPagePath: string): string {
     scripts.push(batteryScript.replace('%BATTERY_CONFIG%', JSON.stringify(profile.fingerprint.battery)))
   }
 
+  // Replace or inject scripts
   if (scripts.length > 0) {
     const injectedScripts = `<script>${scripts.join('\n')}</script>`
-    htmlContent = htmlContent.replace('<script src="webrtc-inject.js"></script>', `<script src="webrtc-inject.js"></script>\n    ${injectedScripts}`)
+    // Replace the webrtc-inject.js script tag with inline scripts
+    htmlContent = htmlContent.replace('<script src="webrtc-inject.js"></script>', injectedScripts)
   }
 
   const tempPath = join(app.getPath('userData'), 'profiles', profile.id, 'test-page.html')
@@ -182,11 +208,17 @@ export function launchProfile(profile: Profile): { success: boolean; error?: str
   try {
     const child = spawn(chromePath, args, { detached: true, stdio: 'ignore' })
     child.unref()
-    runningProfiles.set(profile.id, child)
+    
+    const pid = child.pid
+    runningProfiles.set(profile.id, { process: child, pid })
 
     child.on('exit', () => {
       runningProfiles.delete(profile.id)
+      notifyProfileStatusChange(profile.id, false)
     })
+
+    // Notify renderer that profile is now running
+    notifyProfileStatusChange(profile.id, true)
 
     return { success: true }
   } catch (err) {
@@ -195,13 +227,50 @@ export function launchProfile(profile: Profile): { success: boolean; error?: str
 }
 
 export function closeProfile(profileId: string): void {
-  const child = runningProfiles.get(profileId)
-  if (child) {
-    child.kill()
+  const entry = runningProfiles.get(profileId)
+  if (entry) {
+    entry.process.kill()
     runningProfiles.delete(profileId)
+    notifyProfileStatusChange(profileId, false)
   }
 }
 
 export function getRunningProfiles(): string[] {
   return Array.from(runningProfiles.keys())
+}
+
+// Check if a Chrome process with specific user-data-dir is actually running
+async function isProfileActuallyRunning(profileId: string): Promise<boolean> {
+  const userDataDir = join(app.getPath('userData'), 'profiles', profileId)
+  
+  try {
+    if (process.platform === 'darwin') {
+      const { stdout } = await execAsync(`ps aux | grep "user-data-dir=${userDataDir}" | grep -v grep`)
+      return stdout.trim().length > 0
+    } else if (process.platform === 'win32') {
+      const { stdout } = await execAsync(`wmic process where "commandline like '%user-data-dir=${userDataDir}%'" get processid`)
+      return stdout.trim().split('\n').length > 1
+    } else {
+      const { stdout } = await execAsync(`ps aux | grep "user-data-dir=${userDataDir}" | grep -v grep`)
+      return stdout.trim().length > 0
+    }
+  } catch {
+    return false
+  }
+}
+
+// Sync running profiles on app start
+export async function syncRunningProfiles(profileIds: string[]): Promise<string[]> {
+  const actuallyRunning: string[] = []
+  
+  for (const profileId of profileIds) {
+    const isRunning = await isProfileActuallyRunning(profileId)
+    if (isRunning) {
+      actuallyRunning.push(profileId)
+      // Add to map without process reference (we don't have it)
+      runningProfiles.set(profileId, { process: null as any, pid: undefined })
+    }
+  }
+  
+  return actuallyRunning
 }

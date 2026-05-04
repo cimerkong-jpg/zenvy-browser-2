@@ -27,6 +27,7 @@ function createWindow(): void {
     height: 800,
     minWidth: 1000,
     minHeight: 600,
+    title: 'Zenvy Browser',
     show: false,
     autoHideMenuBar: true,
     titleBarStyle: 'hiddenInset',
@@ -131,6 +132,11 @@ app.whenReady().then(() => {
   ipcMain.handle('browser:launch', (_, profile: Profile) => browser.launchProfile(profile))
   ipcMain.handle('browser:close', (_, profileId: string) => browser.closeProfile(profileId))
   ipcMain.handle('browser:running', () => browser.getRunningProfiles())
+  ipcMain.handle('browser:sync', async () => {
+    const profiles = await db.getProfiles()
+    const profileIds = profiles.map(p => p.id)
+    return browser.syncRunningProfiles(profileIds)
+  })
 
   // ── Cookie handlers ──────────────────────────────────────────────────────
   ipcMain.handle('cookies:get', (_, profileId: string) => cookies.getCookies(profileId))
@@ -192,6 +198,14 @@ app.whenReady().then(() => {
     const template = templates.importTemplate(result.filePaths[0])
     templates.saveCustomTemplate(template)
     return template
+  })
+
+  // ── App handlers ─────────────────────────────────────────────────────────
+  ipcMain.handle('app:reload', () => {
+    const windows = BrowserWindow.getAllWindows()
+    if (windows.length > 0) {
+      windows[0].reload()
+    }
   })
 
   createWindow()

@@ -103,7 +103,7 @@ export default function ProfileRow({
             type="checkbox"
             checked={isSelected}
             onChange={() => toggleSelect(profile.id)}
-            className="h-4 w-4 accent-emerald-500"
+            className="h-4 w-4 accent-purple-500"
           />
         </td>
 
@@ -158,7 +158,7 @@ export default function ProfileRow({
               className={`rounded-lg px-3 py-1.5 text-xs font-bold text-white transition-all ${
                 isRunning
                   ? 'bg-orange-500 hover:bg-orange-400'
-                  : 'bg-emerald-500 hover:bg-emerald-400'
+                  : 'bg-purple-500 hover:bg-purple-400'
               }`}
             >
               {isRunning ? 'Đóng' : 'Mở'}

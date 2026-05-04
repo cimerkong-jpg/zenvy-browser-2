@@ -360,7 +360,7 @@ export default function ProfileModal({ profile, onClose }: Props) {
                         const LINUX_FONTS = ['DejaVu Sans', 'Liberation Sans', 'Ubuntu', 'Noto Sans', 'FreeSans', 'DejaVu Serif', 'Liberation Serif', 'Noto Serif', 'FreeSerif', 'DejaVu Sans Mono', 'Liberation Mono', 'Ubuntu Mono']
                         setFingerprint(f => ({ ...f, fonts: LINUX_FONTS }))
                       }}
-                      className="px-3 py-1.5 rounded-lg text-sm bg-green-500/20 text-green-300 border border-green-500/30 hover:bg-green-500/30"
+                      className="px-3 py-1.5 rounded-lg text-sm bg-purple-500/20 text-purple-300 border border-purple-500/30 hover:bg-purple-500/30"
                     >
                       Linux
                     </button>

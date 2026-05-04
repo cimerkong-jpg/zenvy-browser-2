@@ -1,8 +1,10 @@
-import { useMemo, useState } from 'react'
+import { useMemo, useState, useEffect } from 'react'
+import { createPortal } from 'react-dom'
 import type { ReactNode } from 'react'
 import { useStore } from '../store/useStore'
 import ProfileModal from '../components/ProfileModal'
 import ProfileRow from '../components/ProfileRow'
+import { CreateGroupModal, EditGroupModal, DeleteGroupModal } from '../components/GroupModals'
 import type { Profile } from '../../../shared/types'
 
 type StatusFilter = 'all' | 'open' | 'closed'
@@ -24,14 +26,16 @@ export default function ProfilesPage() {
 
   const [editProfile, setEditProfile] = useState<Profile | null>(null)
   const [showCreate, setShowCreate] = useState(false)
-  const [showGroupInput, setShowGroupInput] = useState(false)
-  const [newGroupName, setNewGroupName] = useState('')
   const [statusFilter, setStatusFilter] = useState<StatusFilter>('all')
   const [moveTargetGroupId, setMoveTargetGroupId] = useState('')
   const [showMoveGroupModal, setShowMoveGroupModal] = useState(false)
   const [groupPanelCollapsed, setGroupPanelCollapsed] = useState(false)
-  const [editingGroupId, setEditingGroupId] = useState<string | null>(null)
-  const [editingGroupName, setEditingGroupName] = useState('')
+  const [isReloading, setIsReloading] = useState(false)
+  
+  // Group modals state
+  const [showCreateGroupModal, setShowCreateGroupModal] = useState(false)
+  const [editingGroup, setEditingGroup] = useState<{ id: string; name: string } | null>(null)
+  const [deletingGroup, setDeletingGroup] = useState<{ id: string; name: string } | null>(null)
 
   const filtered = useMemo(() => {
     const q = searchQuery.toLowerCase().trim()
@@ -58,15 +62,26 @@ export default function ProfilesPage() {
 
   const selectedGroup = selectedGroupId ? groups.find((group) => group.id === selectedGroupId) : null
   const allSelected = filtered.length > 0 && filtered.every((profile) => selectedIds.includes(profile.id))
-  const openCount = runningIds.length
-  const closedCount = Math.max(profiles.length - openCount, 0)
+  
+  // Calculate stats based on filtered profiles (current group)
+  const openCount = filtered.filter(p => runningIds.includes(p.id)).length
+  const closedCount = filtered.filter(p => !runningIds.includes(p.id)).length
+  const selectedCount = filtered.filter(p => selectedIds.includes(p.id)).length
 
-  const createGroup = async () => {
-    const name = newGroupName.trim()
-    if (!name) return
+  // Group handlers
+  const handleCreateGroup = async (name: string) => {
     await window.api.groups.create(name)
-    setNewGroupName('')
-    setShowGroupInput(false)
+    await loadAll()
+  }
+
+  const handleUpdateGroup = async (groupId: string, newName: string) => {
+    await window.api.groups.update(groupId, { name: newName })
+    await loadAll()
+  }
+
+  const handleDeleteGroup = async (groupId: string) => {
+    await window.api.groups.delete(groupId)
+    if (selectedGroupId === groupId) setSelectedGroupId(null)
     await loadAll()
   }
 
@@ -103,21 +118,6 @@ export default function ProfilesPage() {
     await loadAll()
   }
 
-  const deleteGroup = async (groupId: string) => {
-    if (!confirm('Xóa nhóm này? Các hồ sơ trong nhóm sẽ chuyển về "Không có nhóm".')) return
-    await window.api.groups.delete(groupId)
-    if (selectedGroupId === groupId) setSelectedGroupId(null)
-    await loadAll()
-  }
-
-  const updateGroup = async (groupId: string, newName: string) => {
-    if (!newName.trim()) return
-    await window.api.groups.update(groupId, { name: newName.trim() })
-    setEditingGroupId(null)
-    setEditingGroupName('')
-    await loadAll()
-  }
-
   const importProfiles = async () => {
     const input = document.createElement('input')
     input.type = 'file'
@@ -143,19 +143,11 @@ export default function ProfilesPage() {
         profiles={profiles}
         selectedGroupId={selectedGroupId}
         setSelectedGroupId={setSelectedGroupId}
-        showGroupInput={showGroupInput}
-        setShowGroupInput={setShowGroupInput}
-        newGroupName={newGroupName}
-        setNewGroupName={setNewGroupName}
-        createGroup={createGroup}
         collapsed={groupPanelCollapsed}
         setCollapsed={setGroupPanelCollapsed}
-        deleteGroup={deleteGroup}
-        updateGroup={updateGroup}
-        editingGroupId={editingGroupId}
-        setEditingGroupId={setEditingGroupId}
-        editingGroupName={editingGroupName}
-        setEditingGroupName={setEditingGroupName}
+        onCreateGroup={() => setShowCreateGroupModal(true)}
+        onEditGroup={(group) => setEditingGroup(group)}
+        onDeleteGroup={(group) => setDeletingGroup(group)}
       />
 
       <section className="flex min-w-0 flex-1 flex-col">
@@ -171,14 +163,25 @@ export default function ProfilesPage() {
 
           <div className="flex items-center gap-2">
             <button
-              onClick={loadAll}
-              className="rounded-lg border border-white/10 bg-white/[0.04] px-3 py-2 text-sm font-medium text-slate-300 hover:bg-white/[0.08]"
+              onClick={async () => {
+                setIsReloading(true)
+                await loadAll()
+                setTimeout(() => setIsReloading(false), 500)
+              }}
+              disabled={isReloading}
+              className="rounded-lg border border-white/10 bg-white/[0.04] px-3 py-2 text-sm font-medium text-slate-300 hover:bg-white/[0.08] disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
             >
+              {isReloading && (
+                <svg className="animate-spin h-4 w-4" fill="none" viewBox="0 0 24 24">
+                  <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                  <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                </svg>
+              )}
               Làm mới
             </button>
             <button
               onClick={() => setShowCreate(true)}
-              className="rounded-lg bg-emerald-500 px-4 py-2 text-sm font-semibold text-white shadow-[0_0_24px_rgba(16,185,129,0.22)] hover:bg-emerald-400"
+              className="rounded-lg bg-purple-500 px-4 py-2 text-sm font-semibold text-white shadow-[0_0_24px_rgba(168,85,247,0.22)] hover:bg-purple-400"
             >
               + Tạo hồ sơ
             </button>
@@ -186,10 +189,10 @@ export default function ProfilesPage() {
         </div>
 
         <div className="no-drag grid grid-cols-4 gap-3 px-6 pb-4">
-          <CompactStat label="Tổng hồ sơ" value={profiles.length} />
-          <CompactStat label="Đang mở" value={openCount} tone="green" />
+          <CompactStat label="Tổng hồ sơ" value={filtered.length} />
+          <CompactStat label="Đang mở" value={openCount} tone="purple" />
           <CompactStat label="Đã đóng" value={closedCount} tone="orange" />
-          <CompactStat label="Đã chọn" value={selectedIds.length} tone="purple" />
+          <CompactStat label="Đã chọn" value={selectedCount} tone="purple" />
         </div>
 
         <div className="no-drag px-6 pb-3">
@@ -220,7 +223,7 @@ export default function ProfilesPage() {
 
             <FieldShell label="Chế độ hiển thị" className="w-52">
               <div className="flex h-10 items-center gap-2 rounded-lg border border-white/10 bg-[#111827]/70 px-3 text-sm text-slate-300">
-                <span className="text-emerald-400">◉</span>
+                <span className="text-purple-400">◉</span>
                 Hồ sơ
               </div>
             </FieldShell>
@@ -277,7 +280,7 @@ export default function ProfilesPage() {
                         type="checkbox"
                         checked={allSelected}
                         onChange={() => (allSelected ? clearSelection() : selectAll(filtered.map((profile) => profile.id)))}
-                        className="h-4 w-4 accent-emerald-500"
+                        className="h-4 w-4 accent-purple-500"
                       />
                     </th>
                     <HeaderCell>Profile ID</HeaderCell>
@@ -301,7 +304,7 @@ export default function ProfilesPage() {
                           <p className="text-xs text-slate-500">Tạo hồ sơ đầu tiên để bắt đầu quản lý tài khoản.</p>
                           <button
                             onClick={() => setShowCreate(true)}
-                            className="rounded-lg bg-emerald-500 px-4 py-2 text-xs font-semibold text-white hover:bg-emerald-400"
+                            className="rounded-lg bg-purple-500 px-4 py-2 text-xs font-semibold text-white hover:bg-purple-400"
                           >
                             Tạo hồ sơ đầu tiên
                           </button>
@@ -332,6 +335,30 @@ export default function ProfilesPage() {
 
         {showCreate && <ProfileModal profile={null} onClose={() => setShowCreate(false)} />}
         {editProfile && <ProfileModal profile={editProfile} onClose={() => setEditProfile(null)} />}
+        
+        {/* Group Modals */}
+        {showCreateGroupModal && (
+          <CreateGroupModal
+            onClose={() => setShowCreateGroupModal(false)}
+            onCreate={handleCreateGroup}
+          />
+        )}
+        {editingGroup && (
+          <EditGroupModal
+            groupId={editingGroup.id}
+            currentName={editingGroup.name}
+            onClose={() => setEditingGroup(null)}
+            onUpdate={handleUpdateGroup}
+          />
+        )}
+        {deletingGroup && (
+          <DeleteGroupModal
+            groupName={deletingGroup.name}
+            onClose={() => setDeletingGroup(null)}
+            onDelete={() => handleDeleteGroup(deletingGroup.id)}
+          />
+        )}
+        
         {showMoveGroupModal && (
           <MoveGroupModal
             selectedIds={selectedIds}
@@ -350,43 +377,123 @@ export default function ProfilesPage() {
   )
 }
 
+function GroupItem({
+  group,
+  isSelected,
+  isMenuOpen,
+  onSelect,
+  onToggleMenu,
+  onEdit,
+  onDelete,
+  onCloseMenu
+}: {
+  group: { id: string; name: string }
+  isSelected: boolean
+  isMenuOpen: boolean
+  onSelect: () => void
+  onToggleMenu: (e: React.MouseEvent) => void
+  onEdit: () => void
+  onDelete: () => void
+  onCloseMenu: () => void
+}) {
+  const [buttonRef, setButtonRef] = useState<HTMLButtonElement | null>(null)
+  const [menuPosition, setMenuPosition] = useState({ top: 0, left: 0 })
+
+  // Calculate menu position when it opens
+  useEffect(() => {
+    if (isMenuOpen && buttonRef) {
+      const rect = buttonRef.getBoundingClientRect()
+      setMenuPosition({
+        top: rect.top,
+        left: rect.left - 176 // 176px = w-44 (11rem = 176px)
+      })
+    }
+  }, [isMenuOpen, buttonRef])
+
+  return (
+    <div className="relative">
+      <button
+        onClick={onSelect}
+        className={`w-full rounded-lg px-3 py-2 text-left text-sm font-semibold transition-all ${
+          isSelected ? 'bg-purple-500/15 text-white' : 'text-slate-300 hover:bg-white/5'
+        }`}
+      >
+        <span className="truncate pr-8">{group.name}</span>
+      </button>
+      
+      <button
+        ref={setButtonRef}
+        onClick={onToggleMenu}
+        className="absolute right-2 top-1/2 -translate-y-1/2 z-10 flex h-6 w-6 items-center justify-center rounded hover:bg-white/10 text-slate-400 hover:text-white"
+        title="Tùy chọn"
+      >
+        ⋮
+      </button>
+      
+      {isMenuOpen && createPortal(
+        <>
+          <div 
+            className="fixed inset-0 z-40" 
+            onClick={onCloseMenu}
+          />
+          <div 
+            className="fixed z-50 w-44 rounded-lg border border-white/10 bg-[#1F2937] py-1.5 shadow-[0_8px_24px_rgba(0,0,0,0.5)]"
+            style={{ top: `${menuPosition.top}px`, left: `${menuPosition.left}px` }}
+          >
+            <button
+              onClick={(e) => {
+                e.stopPropagation()
+                onEdit()
+              }}
+              className="flex w-full items-center gap-3 px-4 py-2.5 text-left text-sm text-slate-300 hover:bg-purple-500/10 hover:text-white transition-colors"
+            >
+              <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
+              </svg>
+              <span>Chỉnh sửa</span>
+            </button>
+            <button
+              onClick={(e) => {
+                e.stopPropagation()
+                onDelete()
+              }}
+              className="flex w-full items-center gap-3 px-4 py-2.5 text-left text-sm text-red-400 hover:bg-red-500/10"
+            >
+              <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+              </svg>
+              <span>Xóa</span>
+            </button>
+          </div>
+        </>,
+        document.body
+      )}
+    </div>
+  )
+}
+
 function GroupPanel({
   groups,
   profiles,
   selectedGroupId,
   setSelectedGroupId,
-  showGroupInput,
-  setShowGroupInput,
-  newGroupName,
-  setNewGroupName,
-  createGroup,
   collapsed,
   setCollapsed,
-  deleteGroup,
-  updateGroup,
-  editingGroupId,
-  setEditingGroupId,
-  editingGroupName,
-  setEditingGroupName
+  onCreateGroup,
+  onEditGroup,
+  onDeleteGroup
 }: {
   groups: Array<{ id: string; name: string }>
   profiles: Profile[]
   selectedGroupId: string | null
   setSelectedGroupId: (id: string | null) => void
-  showGroupInput: boolean
-  setShowGroupInput: (value: boolean) => void
-  newGroupName: string
-  setNewGroupName: (value: string) => void
-  createGroup: () => void
   collapsed: boolean
   setCollapsed: (value: boolean) => void
-  deleteGroup: (groupId: string) => void
-  updateGroup: (groupId: string, newName: string) => void
-  editingGroupId: string | null
-  setEditingGroupId: (id: string | null) => void
-  editingGroupName: string
-  setEditingGroupName: (name: string) => void
+  onCreateGroup: () => void
+  onEditGroup: (group: { id: string; name: string }) => void
+  onDeleteGroup: (group: { id: string; name: string }) => void
 }) {
+  const [openMenuId, setOpenMenuId] = useState<string | null>(null)
   const noGroupCount = profiles.filter((profile) => !profile.groupId).length
 
   if (collapsed) {
@@ -417,41 +524,26 @@ function GroupPanel({
         </div>
         <div className="flex items-center gap-2">
           <button
+            onClick={onCreateGroup}
+            className="rounded-lg bg-white px-3 py-1.5 text-xs font-semibold text-slate-900 hover:bg-slate-200"
+          >
+            + Mới
+          </button>
+          <button
             onClick={() => setCollapsed(true)}
             className="flex h-8 w-8 items-center justify-center rounded-lg border border-white/10 bg-white/[0.04] text-slate-400 hover:bg-white/[0.08] hover:text-white"
             title="Thu gọn nhóm hồ sơ"
           >
             ‹
           </button>
-          <button
-            onClick={() => setShowGroupInput(true)}
-            className="rounded-lg bg-white px-3 py-1.5 text-xs font-semibold text-slate-900 hover:bg-slate-200"
-          >
-            + Mới
-          </button>
         </div>
       </div>
-
-      {showGroupInput && (
-        <input
-          autoFocus
-          value={newGroupName}
-          onChange={(event) => setNewGroupName(event.target.value)}
-          onKeyDown={(event) => event.key === 'Enter' && createGroup()}
-          onBlur={() => {
-            setShowGroupInput(false)
-            setNewGroupName('')
-          }}
-          placeholder="Tên nhóm..."
-          className="mb-3 h-10 rounded-lg border border-purple-500/20 bg-white/5 px-3 text-sm text-white outline-none placeholder:text-slate-600 focus:border-purple-400/60"
-        />
-      )}
 
       <div className="mb-3">
         <button
           onClick={() => setSelectedGroupId(null)}
           className={`w-full rounded-lg px-3 py-2.5 text-left text-sm font-semibold transition-all ${
-            selectedGroupId === null ? 'bg-emerald-500/15 text-white' : 'text-slate-400 hover:bg-white/5 hover:text-white'
+            selectedGroupId === null ? 'bg-purple-500/15 text-white' : 'text-slate-400 hover:bg-white/5 hover:text-white'
           }`}
         >
           Tất cả
@@ -462,77 +554,35 @@ function GroupPanel({
             selectedGroupId === 'no-group' ? 'bg-purple-500/15 text-white' : 'text-slate-300 hover:bg-white/5 hover:text-white'
           }`}
         >
-          Không có nhóm <span className="float-right text-xs text-slate-500">{noGroupCount}</span>
+          Không có nhóm
         </button>
       </div>
 
       <div className="space-y-1 overflow-y-auto">
         {groups.map((group) => {
-          const count = profiles.filter((profile) => profile.groupId === group.id).length
-          const isEditing = editingGroupId === group.id
+          const isMenuOpen = openMenuId === group.id
           
           return (
-            <div key={group.id} className="relative group/item">
-              {isEditing ? (
-                <input
-                  autoFocus
-                  value={editingGroupName}
-                  onChange={(e) => setEditingGroupName(e.target.value)}
-                  onKeyDown={(e) => {
-                    if (e.key === 'Enter') updateGroup(group.id, editingGroupName)
-                    if (e.key === 'Escape') {
-                      setEditingGroupId(null)
-                      setEditingGroupName('')
-                    }
-                  }}
-                  onBlur={() => {
-                    if (editingGroupName.trim()) {
-                      updateGroup(group.id, editingGroupName)
-                    } else {
-                      setEditingGroupId(null)
-                      setEditingGroupName('')
-                    }
-                  }}
-                  className="w-full rounded-lg border border-purple-500/20 bg-white/5 px-3 py-2 text-sm text-white outline-none focus:border-purple-400/60"
-                />
-              ) : (
-                <button
-                  onClick={() => setSelectedGroupId(group.id)}
-                  className={`w-full rounded-lg px-3 py-2 text-left text-sm font-semibold transition-all ${
-                    selectedGroupId === group.id ? 'bg-purple-500/15 text-white' : 'text-slate-300 hover:bg-white/5'
-                  }`}
-                >
-                  <span className="truncate">{group.name}</span>
-                  <span className="float-right text-xs text-slate-500">{count}</span>
-                </button>
-              )}
-              
-              {!isEditing && (
-                <div className="absolute right-2 top-1/2 -translate-y-1/2 hidden group-hover/item:flex items-center gap-1">
-                  <button
-                    onClick={(e) => {
-                      e.stopPropagation()
-                      setEditingGroupId(group.id)
-                      setEditingGroupName(group.name)
-                    }}
-                    className="p-1 rounded hover:bg-white/10 text-slate-400 hover:text-white"
-                    title="Chỉnh sửa tên nhóm"
-                  >
-                    ✎
-                  </button>
-                  <button
-                    onClick={(e) => {
-                      e.stopPropagation()
-                      deleteGroup(group.id)
-                    }}
-                    className="p-1 rounded hover:bg-red-500/20 text-slate-400 hover:text-red-400"
-                    title="Xóa nhóm"
-                  >
-                    ✕
-                  </button>
-                </div>
-              )}
-            </div>
+            <GroupItem
+              key={group.id}
+              group={group}
+              isSelected={selectedGroupId === group.id}
+              isMenuOpen={isMenuOpen}
+              onSelect={() => setSelectedGroupId(group.id)}
+              onToggleMenu={(e) => {
+                e.stopPropagation()
+                setOpenMenuId(isMenuOpen ? null : group.id)
+              }}
+              onEdit={() => {
+                setOpenMenuId(null)
+                onEditGroup({ id: group.id, name: group.name })
+              }}
+              onDelete={() => {
+                setOpenMenuId(null)
+                onDeleteGroup({ id: group.id, name: group.name })
+              }}
+              onCloseMenu={() => setOpenMenuId(null)}
+            />
           )
         })}
       </div>
@@ -566,7 +616,7 @@ function MoveGroupModal({
             {selectedIds.map((id) => (
               <span
                 key={id}
-                className="rounded-md bg-emerald-500/16 px-4 py-2 font-mono text-sm font-bold text-emerald-300"
+                className="rounded-md bg-purple-500/16 px-4 py-2 font-mono text-sm font-bold text-purple-300"
               >
                 {id.slice(0, 6).toUpperCase()}
               </span>
@@ -577,7 +627,7 @@ function MoveGroupModal({
         <select
           value={moveTargetGroupId}
           onChange={(event) => setMoveTargetGroupId(event.target.value)}
-          className="mt-6 h-14 w-full rounded-lg border border-slate-600/70 bg-[#202B38] px-4 text-sm text-white outline-none transition-colors focus:border-emerald-400"
+          className="mt-6 h-14 w-full rounded-lg border border-slate-600/70 bg-[#202B38] px-4 text-sm text-white outline-none transition-colors focus:border-purple-400"
         >
           <option value="">Chọn nhóm hồ sơ</option>
           <option value="none">Không có nhóm</option>
@@ -598,7 +648,7 @@ function MoveGroupModal({
           <button
             onClick={onConfirm}
             disabled={!moveTargetGroupId}
-            className="rounded-lg bg-emerald-500 px-5 py-2.5 text-sm font-bold text-white hover:bg-emerald-400 disabled:cursor-not-allowed disabled:opacity-45"
+            className="rounded-lg bg-purple-500 px-5 py-2.5 text-sm font-bold text-white hover:bg-purple-400 disabled:cursor-not-allowed disabled:opacity-45"
           >
             Chuyển
           </button>
@@ -608,10 +658,10 @@ function MoveGroupModal({
   )
 }
 
-function CompactStat({ label, value, tone = 'slate' }: { label: string; value: number; tone?: 'slate' | 'green' | 'orange' | 'purple' }) {
+function CompactStat({ label, value, tone = 'slate' }: { label: string; value: number; tone?: 'slate' | 'violet' | 'orange' | 'purple' }) {
   const toneClass = {
     slate: 'text-slate-200',
-    green: 'text-emerald-300',
+    violet: 'text-violet-300',
     orange: 'text-orange-300',
     purple: 'text-purple-300'
   }[tone]

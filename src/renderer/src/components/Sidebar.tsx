@@ -2,7 +2,8 @@ import { useState } from 'react'
 import { useTheme, type Theme } from '../store/useTheme'
 import TemplateManager from './TemplateManager'
 import appIcon from '../assets/brand/faticon-logo.png'
-import zenvyLogo from '../assets/brand/logo-cropped.png'
+import zenvyLogoDark from '../assets/brand/logo-cropped.png'
+import zenvyLogoLight from '../assets/brand/logo-cropped-light.png'
 
 const themeMeta: Record<Theme, { label: string; icon: string }> = {
   light: { label: 'Light', icon: '☀' },
@@ -20,6 +21,9 @@ export default function Sidebar() {
     setShowThemePicker(false)
   }
 
+  // Chọn logo dựa trên theme hiện tại
+  const currentLogo = resolvedTheme === 'light' ? zenvyLogoLight : zenvyLogoDark
+
   return (
     <>
       <aside className="app-sidebar w-60 flex-shrink-0 flex flex-col border-r border-purple-500/10 bg-[#0D0B1A]/95">
@@ -28,7 +32,7 @@ export default function Sidebar() {
         <div className="no-drag min-h-0 flex-1 overflow-y-auto overflow-x-hidden px-3 pb-4">
           <div className="brand-logo-shell mb-5 inline-flex w-fit max-w-full px-1 py-1">
             <img
-              src={zenvyLogo}
+              src={currentLogo}
               alt="Zenvy"
               className="h-12 w-auto max-w-full object-contain"
             />

@@ -77,7 +77,7 @@ export function getGroups(): Group[] {
 export function createGroup(name: string): Group {
   const data = read()
   const group: Group = { id: uuidv4(), name, createdAt: Date.now() }
-  data.groups.push(group)
+  data.groups.unshift(group) // Add to beginning instead of end
   write(data)
   return group
 }
@@ -107,7 +107,7 @@ export function getProfiles(): Profile[] {
 export function createProfile(data: Omit<Profile, 'id' | 'createdAt' | 'updatedAt'>): Profile {
   const db = read()
   const profile: Profile = { ...data, id: nextProfileId(db.profiles), createdAt: Date.now(), updatedAt: Date.now() }
-  db.profiles.push(profile)
+  db.profiles.unshift(profile) // Add to beginning instead of end
   write(db)
   return profile
 }
@@ -147,7 +147,7 @@ export function duplicateProfile(id: string): Profile | null {
     updatedAt: Date.now()
   }
 
-  db.profiles.push(duplicate)
+  db.profiles.unshift(duplicate) // Add to beginning instead of end
   write(db)
   return duplicate
 }
@@ -161,7 +161,7 @@ export function getTags(): Tag[] {
 export function createTag(name: string, color: string): Tag {
   const data = read()
   const tag: Tag = { id: uuidv4(), name, color, createdAt: Date.now() }
-  data.tags.push(tag)
+  data.tags.unshift(tag) // Add to beginning instead of end
   write(data)
   return tag
 }
@@ -201,7 +201,9 @@ export function importProfiles(jsonData: string): Profile[] {
 
   const imported: Profile[] = []
 
-  for (const profile of importData.profiles) {
+  // Import in reverse order so they appear in correct order at the top
+  for (let i = importData.profiles.length - 1; i >= 0; i--) {
+    const profile = importData.profiles[i]
     const newProfile: Profile = {
       ...profile,
       id: nextProfileId(db.profiles),
@@ -211,8 +213,8 @@ export function importProfiles(jsonData: string): Profile[] {
       tags: profile.tags || []
     }
 
-    db.profiles.push(newProfile)
-    imported.push(newProfile)
+    db.profiles.unshift(newProfile) // Add to beginning instead of end
+    imported.unshift(newProfile) // Keep imported list in original order
   }
 
   write(db)

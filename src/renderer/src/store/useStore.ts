@@ -19,6 +19,9 @@ interface AppState {
   setSearchQuery: (q: string) => void
 
   loadAll: () => Promise<void>
+  syncRunning: () => Promise<void>
+  updateProfileStatus: (profileId: string, isRunning: boolean) => void
+  setupStatusListener: () => () => void
 }
 
 export const useStore = create<AppState>((set, get) => ({
@@ -52,5 +55,26 @@ export const useStore = create<AppState>((set, get) => ({
       window.api.browser.running()
     ])
     set({ profiles, groups, runningIds })
+  },
+
+  syncRunning: async () => {
+    const runningIds = await window.api.browser.sync()
+    set({ runningIds })
+  },
+
+  updateProfileStatus: (profileId, isRunning) => {
+    const { runningIds } = get()
+    if (isRunning && !runningIds.includes(profileId)) {
+      set({ runningIds: [...runningIds, profileId] })
+    } else if (!isRunning && runningIds.includes(profileId)) {
+      set({ runningIds: runningIds.filter(id => id !== profileId) })
+    }
+  },
+
+  setupStatusListener: () => {
+    const unsubscribe = window.api.browser.onStatusChanged(({ profileId, isRunning }) => {
+      get().updateProfileStatus(profileId, isRunning)
+    })
+    return unsubscribe
   }
 }))

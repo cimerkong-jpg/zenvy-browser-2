@@ -30,7 +30,13 @@ const api = {
     launch: (profile: Profile): Promise<{ success: boolean; error?: string }> =>
       ipcRenderer.invoke('browser:launch', profile),
     close: (profileId: string): Promise<void> => ipcRenderer.invoke('browser:close', profileId),
-    running: (): Promise<string[]> => ipcRenderer.invoke('browser:running')
+    running: (): Promise<string[]> => ipcRenderer.invoke('browser:running'),
+    sync: (): Promise<string[]> => ipcRenderer.invoke('browser:sync'),
+    onStatusChanged: (callback: (data: { profileId: string; isRunning: boolean }) => void) => {
+      const listener = (_event: any, data: { profileId: string; isRunning: boolean }) => callback(data)
+      ipcRenderer.on('browser:status-changed', listener)
+      return () => ipcRenderer.removeListener('browser:status-changed', listener)
+    }
   },
   cookies: {
     get: (profileId: string) => ipcRenderer.invoke('cookies:get', profileId),
@@ -50,6 +56,9 @@ const api = {
     delete: (name: string) => ipcRenderer.invoke('templates:delete', name),
     export: (template: any) => ipcRenderer.invoke('templates:export', template),
     import: () => ipcRenderer.invoke('templates:import')
+  },
+  app: {
+    reload: (): Promise<void> => ipcRenderer.invoke('app:reload')
   }
 }
 

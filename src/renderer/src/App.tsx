@@ -1,6 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
 import { useStore } from './store/useStore'
-import { useAuth } from './store/useAuth'
 import Sidebar from './components/Sidebar'
 import ProfilesPage from './pages/ProfilesPage'
 import AutomationPage from './pages/AutomationPage'
@@ -8,56 +7,31 @@ import SyncPage from './pages/SyncPage'
 import ExtensionPage from './pages/ExtensionPage'
 import MembersPage from './pages/MembersPage'
 import SettingsPage from './pages/SettingsPage'
-import LoginPage from './pages/LoginPage'
-import RegisterPage from './pages/RegisterPage'
 import ToastContainer from './components/ToastContainer'
 import TemplateManager from './components/TemplateManager'
 
-export type Page = 'profiles' | 'automation' | 'sync' | 'extensions' | 'members' | 'settings' | 'login' | 'register'
+export type Page = 'profiles' | 'automation' | 'sync' | 'extensions' | 'members' | 'settings'
 export type AutoSub = 'scripts' | 'scheduler' | 'history'
 
 export default function App() {
   const loadAll = useStore((s) => s.loadAll)
   const syncRunning = useStore((s) => s.syncRunning)
   const setupStatusListener = useStore((s) => s.setupStatusListener)
-  const { initAuth, isAuthenticated, isLoading: authLoading } = useAuth()
   const [activePage, setActivePage] = useState<Page>('profiles')
   const [autoSub, setAutoSub] = useState<AutoSub>('scripts')
   const [sidebarWidth, setSidebarWidth] = useState(240)
   const sidebarWidthRef = useRef(sidebarWidth)
   const [showTemplateManager, setShowTemplateManager] = useState(false)
 
-  // Initialize auth on mount
+  // Load data on mount
   useEffect(() => {
-    initAuth()
-  }, [initAuth])
-
-  // Load data after auth is ready
-  useEffect(() => {
-    if (!authLoading && isAuthenticated) {
-      loadAll()
-      syncRunning()
-      const unsubscribe = setupStatusListener()
-      return () => { unsubscribe() }
-    }
-  }, [authLoading, isAuthenticated, loadAll, syncRunning, setupStatusListener])
-
-  // Redirect to login if not authenticated
-  useEffect(() => {
-    if (!authLoading && !isAuthenticated && activePage !== 'login' && activePage !== 'register') {
-      setActivePage('login')
-    }
-  }, [authLoading, isAuthenticated, activePage])
-
-  // Redirect to profiles after successful login
-  useEffect(() => {
-    if (isAuthenticated && (activePage === 'login' || activePage === 'register')) {
-      setActivePage('profiles')
-    }
-  }, [isAuthenticated, activePage])
+    loadAll()
+    syncRunning()
+    const unsubscribe = setupStatusListener()
+    return () => { unsubscribe() }
+  }, [loadAll, syncRunning, setupStatusListener])
 
   const navigateTo = (page: Page) => {
-    console.log('[App] navigateTo called with:', page)
     setActivePage(page)
     if (page === 'automation') setAutoSub('scripts')
   }
@@ -79,33 +53,6 @@ export default function App() {
     document.addEventListener('mouseup', onUp)
   }
 
-  // Show loading screen while checking auth
-  if (authLoading) {
-    return (
-      <div className="mesh-bg flex h-screen w-screen items-center justify-center">
-        <div className="text-center">
-          <div className="mb-4 inline-block h-8 w-8 animate-spin rounded-full border-4 border-purple-500 border-t-transparent" />
-          <p className="text-sm text-slate-400">Loading...</p>
-        </div>
-      </div>
-    )
-  }
-
-  // Show auth pages if not authenticated
-  if (!isAuthenticated) {
-    return (
-      <div className="mesh-bg h-screen w-screen overflow-hidden">
-        {activePage === 'register' ? (
-          <RegisterPage onNavigateToLogin={() => setActivePage('login')} />
-        ) : (
-          <LoginPage onNavigateToRegister={() => setActivePage('register')} />
-        )}
-        <ToastContainer />
-      </div>
-    )
-  }
-
-  // Show main app if authenticated
   return (
     <div className="mesh-bg flex h-screen w-screen overflow-hidden">
       <div className="relative flex-shrink-0" style={{ width: sidebarWidth }}>

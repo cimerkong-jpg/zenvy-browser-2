@@ -12,6 +12,7 @@ import * as scheduler from './automation/scheduler'
 import * as appSettings from './appSettings'
 import * as userSettings from './userSettings'
 import * as extensions from './extensions'
+import * as auth from './auth'
 import type { Profile } from '../shared/types'
 import type { Cookie } from './cookies'
 
@@ -306,6 +307,31 @@ app.whenReady().then(() => {
   ipcMain.handle('browser:navigateTo', async (_, profileId: string, url: string) => {
     // This will be handled by the executor when we have access to the page
     return { success: false, error: 'Not implemented yet - requires active browser connection' }
+  })
+
+  // ── Auth handlers ─────────────────────────────────────────────────────────
+  ipcMain.handle('auth:signUp', async (_, email: string, password: string) => {
+    return await auth.signUp(email, password)
+  })
+
+  ipcMain.handle('auth:signIn', async (_, email: string, password: string) => {
+    return await auth.signIn(email, password)
+  })
+
+  ipcMain.handle('auth:signOut', async () => {
+    return await auth.signOut()
+  })
+
+  ipcMain.handle('auth:getCurrentUser', async () => {
+    return await auth.getCurrentUser()
+  })
+
+  ipcMain.handle('auth:getCurrentSession', async () => {
+    return await auth.getCurrentSession()
+  })
+
+  ipcMain.handle('auth:isAuthenticated', async () => {
+    return await auth.isAuthenticated()
   })
 
   scheduler.startScheduler(() => db.getProfiles())

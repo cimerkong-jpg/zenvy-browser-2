@@ -110,6 +110,20 @@ const api = {
     copyTo: (fromProfileId: string, toProfileIds: string[], extIds: string[]): Promise<{ success: number; failed: number }> =>
       ipcRenderer.invoke('extensions:copyTo', fromProfileId, toProfileIds, extIds)
   },
+  auth: {
+    signUp: (email: string, password: string): Promise<{ user: any | null; error: string | null }> =>
+      ipcRenderer.invoke('auth:signUp', email, password),
+    signIn: (email: string, password: string): Promise<{ session: any | null; error: string | null }> =>
+      ipcRenderer.invoke('auth:signIn', email, password),
+    signOut: (): Promise<{ error: string | null }> =>
+      ipcRenderer.invoke('auth:signOut'),
+    getCurrentUser: (): Promise<any | null> =>
+      ipcRenderer.invoke('auth:getCurrentUser'),
+    getCurrentSession: (): Promise<any | null> =>
+      ipcRenderer.invoke('auth:getCurrentSession'),
+    isAuthenticated: (): Promise<boolean> =>
+      ipcRenderer.invoke('auth:isAuthenticated')
+  }
 }
 
 contextBridge.exposeInMainWorld('api', api)

@@ -1,5 +1,6 @@
 import { useState } from 'react'
 import { useTheme, type Theme } from '../store/useTheme'
+import { useAuth } from '../store/useAuth'
 import type { Page, AutoSub } from '../App'
 import zenvyLogoDark from '../assets/brand/logo-cropped.png'
 import zenvyLogoLight from '../assets/brand/logo-cropped-light.png'
@@ -26,7 +27,16 @@ interface SidebarProps {
 
 export default function Sidebar({ activePage, onNavigate, autoSub, onAutoSubChange, onOpenTemplateManager }: SidebarProps) {
   const { theme, setTheme, resolvedTheme } = useTheme()
+  const { user, signOut } = useAuth()
   const [showThemePicker, setShowThemePicker] = useState(false)
+
+  const handleLogout = async () => {
+    try {
+      await signOut()
+    } catch (err) {
+      console.error('Logout failed:', err)
+    }
+  }
 
   const selectTheme = (nextTheme: Theme) => {
     setTheme(nextTheme)
@@ -130,6 +140,36 @@ export default function Sidebar({ activePage, onNavigate, autoSub, onAutoSubChan
             <span>Quản lý Templates</span>
           </button>
         </div>
+
+        {/* Account Section */}
+        {user && (
+          <div className="mb-4 rounded-lg bg-[#111218] border border-[#1F2230] p-3">
+            <div className="mb-3">
+              <p className="text-[11px] text-[#6B7280] mb-1">Tài khoản</p>
+              <p className="text-[13px] font-medium text-[#E5E7EB] truncate" title={user.email}>
+                {user.email}
+              </p>
+            </div>
+            
+            <div className="space-y-2 mb-3">
+              <div className="flex justify-between items-center">
+                <span className="text-[11px] text-[#6B7280]">Gói</span>
+                <span className="text-[12px] text-[#E5E7EB]">Personal</span>
+              </div>
+              <div className="flex justify-between items-center">
+                <span className="text-[11px] text-[#6B7280]">Hồ sơ</span>
+                <span className="text-[12px] text-[#E5E7EB]">Local</span>
+              </div>
+            </div>
+            
+            <button
+              onClick={handleLogout}
+              className="w-full rounded-md bg-[#1F2230] px-3 py-1.5 text-[12px] font-medium text-[#9CA3AF] hover:bg-[#2A2D3A] hover:text-[#E5E7EB] transition-all"
+            >
+              Đăng xuất
+            </button>
+          </div>
+        )}
 
         {/* Theme Switcher */}
         <div className="mb-4">

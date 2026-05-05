@@ -1,7 +1,8 @@
 # Progress - Zenvy Browser
 
-## Current Status
-- v1.0.0 — Release Readiness hoàn thành (P2 + P3 done 2026-05-05).
+## Current Status (2026-05-06)
+- v1.0.0 — Release Readiness hoàn thành.
+- **Auth System hoàn thành** — Supabase auth + session persistence + UI đầy đủ.
 - `npm run typecheck` pass. `npm run build` pass.
 - Sẵn sàng release.
 
@@ -75,6 +76,27 @@
 - TESTING.md: QA checklist đầy đủ cho manual test + release criteria.
 - progress.md và features.md cập nhật.
 
+### Auth System (done 2026-05-06)
+- ✅ Supabase client setup (`src/main/supabase.ts`)
+- ✅ Auth module (`src/main/auth.ts`)
+- ✅ Session storage (`src/main/sessionStorage.ts`)
+- ✅ IPC handlers (6 auth endpoints)
+- ✅ Preload API exposure
+- ✅ Auth store (`src/renderer/src/store/useAuth.ts`)
+- ✅ Login page (`src/renderer/src/pages/LoginPage.tsx`)
+- ✅ Register page (`src/renderer/src/pages/RegisterPage.tsx`)
+- ✅ App routing with auth guard
+- ✅ Sidebar integration (user email + logout)
+- ✅ Session persistence across app restarts
+- ✅ Email confirmation flow
+- ✅ Error handling & loading states
+
+### UI Refactor Phase 1 (done 2026-05-06)
+- ✅ Sidebar redesign (cleaner navigation, better active states)
+- ✅ Group Panel redesign (folder-style, hover menu)
+- ✅ Design system compliance (purple accents only, clean backgrounds)
+- ✅ All pages updated to new design system
+
 ## Remaining Work
 
 ### Priority 1: Manual QA trước phát hành
@@ -83,15 +105,17 @@ Dùng checklist trong `TESTING.md`:
 - Cookie import/export/sync.
 - Fingerprint test.
 - Automation Scripts end-to-end.
+- Auth flow (signup, login, logout, session persistence).
 - UI chung (resize, persist, console error).
 - Build DMG và test packaged app.
 
 ### Priority 2: Future improvements (optional)
 - Import profile: option "Ghi đè" (overwrite by name) thay vì chỉ "Nhập thêm".
-- Kéo thả profile giữa các nhóm (nếu cần lại).
+- Cloud sync for profiles/scripts (roadmap đã có trong CLOUD-SYNC-ROADMAP.md).
 - E2E tests tự động.
 
-## Verification Snapshot (2026-05-05)
+## Verification Snapshot (2026-05-06)
 - `npm run typecheck`: passed.
 - `npm run build`: passed (arm64 macOS).
+- Auth system: fully functional.
 - Known npm audit: 32 vulnerabilities từ dependency tree — chưa fix (npm audit fix --force có thể breaking).

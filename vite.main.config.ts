@@ -1,12 +1,13 @@
-import { defineConfig } from 'vite';
+import { defineConfig } from 'vite'
 
-// Để Electron Forge tự quản lý build process
 export default defineConfig({
   build: {
     rollupOptions: {
-      // Only mark Node.js built-ins and native modules as external
-      // uuid should be bundled
-      external: ['electron', 'path', 'fs', 'child_process', 'better-sqlite3']
+      // Externalize everything that is not a relative or absolute local path.
+      // This ensures all node_modules (including puppeteer) are required at runtime
+      // by Node.js instead of being bundled by Vite/Rollup.
+      external: (id: string) =>
+        !id.startsWith('.') && !id.startsWith('/') && !id.startsWith('\0')
     }
   }
-});
+})

@@ -60,7 +60,7 @@ export interface Profile {
   proxy: Proxy
   fingerprint: Fingerprint
   cookies: string
-  tags: string[]
+  variables?: Record<string, string>
   createdAt: number
   updatedAt: number
 }
@@ -71,12 +71,6 @@ export interface Group {
   createdAt: number
 }
 
-export interface Tag {
-  id: string
-  name: string
-  color: string
-  createdAt: number
-}
 
 export interface ProfileExport {
   version: string
@@ -84,12 +78,101 @@ export interface ProfileExport {
   profiles: Profile[]
 }
 
+export type ScriptStatus = 'idle' | 'running' | 'success' | 'error'
+
+export interface AutomationScript {
+  id: string
+  name: string
+  description: string
+  code: string
+  createdAt: number
+  updatedAt: number
+}
+
+export interface ScriptLog {
+  timestamp: number
+  level: 'info' | 'warn' | 'error'
+  message: string
+}
+
+export interface ScriptExecution {
+  id: string
+  scriptId: string
+  scriptName: string
+  profileId: string
+  profileName: string
+  status: ScriptStatus
+  startedAt: number
+  finishedAt?: number
+  logs: ScriptLog[]
+  error?: string
+}
+
 export interface StoreSchema {
   profiles: Profile[]
   groups: Group[]
-  tags: Tag[]
+  scripts: AutomationScript[]
+}
+
+export type ScheduleType = 'once' | 'interval'
+
+export interface ScheduledTask {
+  id: string
+  scriptId: string
+  scriptName: string
+  profileIds: string[]
+  type: ScheduleType
+  runAt?: number
+  intervalMs?: number
+  nextRunAt?: number
+  lastRunAt?: number
+  enabled: boolean
+  createdAt: number
+}
+
+export interface TaskHistoryRecord {
+  id: string
+  scriptId: string
+  scriptName: string
+  profileId: string
+  profileName: string
+  status: 'success' | 'error'
+  startedAt: number
+  finishedAt: number
+  error?: string
+  logs: ScriptLog[]
 }
 
 export type IpcResult<T = void> =
   | { success: true; data: T }
   | { success: false; error: string }
+
+export interface UserProfile {
+  displayName: string
+  email: string
+  avatarColor: string
+  plan: string
+  activatedAt: number
+}
+
+export interface UserStats {
+  profileCount: number
+  scriptCount: number
+  historyCount: number
+  activeSchedulerCount: number
+  totalRuns: number
+}
+
+export interface AppSettings {
+  chromePath: string
+  autoCloseOnExit: boolean
+  chromeRetries: number
+}
+
+export interface ExtensionInfo {
+  id: string
+  name: string
+  version: string
+  description: string
+  enabled: boolean
+}

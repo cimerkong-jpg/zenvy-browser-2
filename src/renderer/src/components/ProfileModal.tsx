@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react'
 import type { Profile, Fingerprint, Proxy } from '../../../shared/types'
 import { useStore } from '../store/useStore'
-import TagInput from './TagInput'
+import Collapsible from './Collapsible'
 
 const UA_PRESETS: Record<string, string> = {
   'Chrome 120 / Windows': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
@@ -55,7 +55,6 @@ export default function ProfileModal({ profile, onClose }: Props) {
   }, [profile, selectedGroupId])
   const [notes, setNotes] = useState('')
   const [cookies, setCookies] = useState('')
-  const [tags, setTags] = useState<string[]>([])
   const [fingerprint, setFingerprint] = useState<Fingerprint>(defaultFingerprint)
   const [proxy, setProxy] = useState<Proxy>(defaultProxy)
   const [tab, setTab] = useState<'basic' | 'fingerprint' | 'proxy'>('basic')
@@ -76,7 +75,6 @@ export default function ProfileModal({ profile, onClose }: Props) {
       setGroupId(profile.groupId ?? '')
       setNotes(profile.notes)
       setCookies(profile.cookies)
-      setTags(profile.tags || [])
       setFingerprint(profile.fingerprint)
       setProxy(profile.proxy)
     }
@@ -127,7 +125,6 @@ export default function ProfileModal({ profile, onClose }: Props) {
         cookies,
         fingerprint,
         proxy,
-        tags,
         status: profile?.status ?? 'closed' as const
       }
       let savedProfile: any
@@ -233,10 +230,6 @@ export default function ProfileModal({ profile, onClose }: Props) {
                 />
               </Field>
 
-              <Field label="Tags">
-                <TagInput selectedTags={tags} onChange={setTags} />
-              </Field>
-
               <Field label="Cookies (JSON)">
                 <textarea
                   value={cookies}
@@ -332,10 +325,9 @@ export default function ProfileModal({ profile, onClose }: Props) {
                 </Field>
               </div>
 
-              <div className="border-t border-white/10 pt-4 mt-4">
-                <h3 className="text-sm font-semibold text-white/90 mb-3">Advanced Fingerprinting</h3>
-
-                <Field label="Fonts">
+              <div className="mt-4">
+                <Collapsible title="Advanced Fingerprinting" badge="Optional" defaultOpen={false}>
+                  <Field label="Fonts">
                   <div className="grid grid-cols-4 gap-2">
                     <button
                       onClick={() => {
@@ -511,7 +503,8 @@ export default function ProfileModal({ profile, onClose }: Props) {
                     </button>
                   </div>
                 </Field>
-              </div>
+              </Collapsible>
+            </div>
             </>
           )}
 

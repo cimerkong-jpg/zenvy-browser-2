@@ -1,13 +1,23 @@
-import { useMemo, useState, useEffect } from 'react'
+import { useMemo, useState, useEffect, useRef } from 'react'
 import { createPortal } from 'react-dom'
 import type { ReactNode } from 'react'
 import { useStore } from '../store/useStore'
 import ProfileModal from '../components/ProfileModal'
 import ProfileRow from '../components/ProfileRow'
 import { CreateGroupModal, EditGroupModal, DeleteGroupModal } from '../components/GroupModals'
-import type { Profile } from '../../../shared/types'
+import type { Profile, AutomationScript } from '../../../shared/types'
 
 type StatusFilter = 'all' | 'open' | 'closed'
+type SortBy = 'default' | 'name-asc' | 'name-desc' | 'created-newest' | 'created-oldest' | 'status'
+
+const SORT_LABELS: Record<SortBy, string> = {
+  default: 'Mặc định',
+  'name-asc': 'Tên A→Z',
+  'name-desc': 'Tên Z→A',
+  'created-newest': 'Mới nhất',
+  'created-oldest': 'Cũ nhất',
+  status: 'Đang mở trước',
+}
 
 export default function ProfilesPage() {
   const {
@@ -27,10 +37,17 @@ export default function ProfilesPage() {
   const [editProfile, setEditProfile] = useState<Profile | null>(null)
   const [showCreate, setShowCreate] = useState(false)
   const [statusFilter, setStatusFilter] = useState<StatusFilter>('all')
+  const [sortBy, setSortBy] = useState<SortBy>('default')
+  const [showSortMenu, setShowSortMenu] = useState(false)
+  const [sortMenuPos, setSortMenuPos] = useState({ x: 0, y: 0 })
+  const [importData, setImportData] = useState<{ profiles: any[]; rawText: string } | null>(null)
+  const sortRef = useRef<HTMLButtonElement>(null)
   const [moveTargetGroupId, setMoveTargetGroupId] = useState('')
   const [showMoveGroupModal, setShowMoveGroupModal] = useState(false)
   const [groupPanelCollapsed, setGroupPanelCollapsed] = useState(false)
+  const [groupPanelWidth, setGroupPanelWidth] = useState(256)
   const [isReloading, setIsReloading] = useState(false)
+  const [showAutoModal, setShowAutoModal] = useState(false)
   
   // Group modals state
   const [showCreateGroupModal, setShowCreateGroupModal] = useState(false)
@@ -40,9 +57,9 @@ export default function ProfilesPage() {
   const filtered = useMemo(() => {
     const q = searchQuery.toLowerCase().trim()
 
-    return profiles.filter((profile) => {
-      const matchGroup = 
-        selectedGroupId === null || 
+    const base = profiles.filter((profile) => {
+      const matchGroup =
+        selectedGroupId === null ||
         (selectedGroupId === 'no-group' && !profile.groupId) ||
         profile.groupId === selectedGroupId
       const matchSearch =
@@ -58,7 +75,31 @@ export default function ProfilesPage() {
 
       return matchGroup && matchSearch && matchStatus
     })
-  }, [profiles, runningIds, searchQuery, selectedGroupId, statusFilter])
+
+    const sorted = [...base]
+    switch (sortBy) {
+      case 'name-asc':
+        sorted.sort((a, b) => a.name.localeCompare(b.name, 'vi'))
+        break
+      case 'name-desc':
+        sorted.sort((a, b) => b.name.localeCompare(a.name, 'vi'))
+        break
+      case 'created-newest':
+        sorted.sort((a, b) => b.createdAt - a.createdAt)
+        break
+      case 'created-oldest':
+        sorted.sort((a, b) => a.createdAt - b.createdAt)
+        break
+      case 'status':
+        sorted.sort((a, b) => {
+          const aR = runningIds.includes(a.id) ? 1 : 0
+          const bR = runningIds.includes(b.id) ? 1 : 0
+          return bR - aR
+        })
+        break
+    }
+    return sorted
+  }, [profiles, runningIds, searchQuery, selectedGroupId, statusFilter, sortBy])
 
   const selectedGroup = selectedGroupId ? groups.find((group) => group.id === selectedGroupId) : null
   const allSelected = filtered.length > 0 && filtered.every((profile) => selectedIds.includes(profile.id))
@@ -118,7 +159,7 @@ export default function ProfilesPage() {
     await loadAll()
   }
 
-  const importProfiles = async () => {
+  const importProfiles = () => {
     const input = document.createElement('input')
     input.type = 'file'
     input.accept = '.json'
@@ -126,25 +167,42 @@ export default function ProfilesPage() {
       const file = (event.target as HTMLInputElement).files?.[0]
       if (!file) return
       try {
-        const imported = await window.api.profiles.import(await file.text())
-        await loadAll()
-        alert(`Đã import ${imported.length} hồ sơ`)
+        const rawText = await file.text()
+        const parsed = JSON.parse(rawText)
+        if (!parsed.profiles || !Array.isArray(parsed.profiles)) {
+          alert('File không hợp lệ')
+          return
+        }
+        setImportData({ profiles: parsed.profiles, rawText })
       } catch (error) {
-        alert('Lỗi import: ' + (error as Error).message)
+        alert('Lỗi đọc file: ' + (error as Error).message)
       }
     }
     input.click()
+  }
+
+  const handleConfirmImport = async (selectedProfiles: any[]) => {
+    try {
+      const payload = JSON.stringify({ version: '1.0.0', exportDate: Date.now(), profiles: selectedProfiles })
+      const imported = await window.api.profiles.import(payload)
+      setImportData(null)
+      await loadAll()
+      alert(`Đã import ${imported.length} hồ sơ`)
+    } catch (error) {
+      alert('Lỗi import: ' + (error as Error).message)
+    }
   }
 
   return (
     <div className="flex h-full min-w-0">
       <GroupPanel
         groups={groups}
-        profiles={profiles}
         selectedGroupId={selectedGroupId}
         setSelectedGroupId={setSelectedGroupId}
         collapsed={groupPanelCollapsed}
         setCollapsed={setGroupPanelCollapsed}
+        width={groupPanelWidth}
+        onWidthChange={setGroupPanelWidth}
         onCreateGroup={() => setShowCreateGroupModal(true)}
         onEditGroup={(group) => setEditingGroup(group)}
         onDeleteGroup={(group) => setDeletingGroup(group)}
@@ -153,14 +211,65 @@ export default function ProfilesPage() {
       <section className="flex min-w-0 flex-1 flex-col">
         <div className="drag-region h-8 flex-shrink-0" />
 
-        <div className="no-drag flex items-center justify-between px-6 pb-4">
+        {/* ── Toolbar — Compact, single-line ── */}
+        <div className="no-drag flex items-center justify-between gap-2 border-b border-purple-500/10 px-4 py-2">
+          <div className="flex items-center gap-2">
+            <BulkButton disabled={!selectedIds.length} onClick={() => setShowAutoModal(true)}>Auto</BulkButton>
+            <BulkButton disabled={!selectedIds.length} onClick={async () => {
+              const toOpen = selectedIds.filter(id => !runningIds.includes(id))
+              const profile = profiles.find(p => toOpen.includes(p.id))
+              if (profile) await window.api.browser.launch(profile)
+              useStore.getState().setRunningIds(await window.api.browser.running())
+            }}>Open</BulkButton>
+            <BulkButton disabled={!selectedIds.length} onClick={async () => {
+              const toClose = selectedIds.filter(id => runningIds.includes(id))
+              await Promise.all(toClose.map(id => window.api.browser.close(id)))
+              useStore.getState().setRunningIds(await window.api.browser.running())
+            }}>Close</BulkButton>
+            <BulkButton
+              onClick={() => { setMoveTargetGroupId(''); setShowMoveGroupModal(true) }}
+              disabled={!selectedIds.length}
+            >Move</BulkButton>
+            <BulkButton onClick={exportSelected} disabled={!selectedIds.length}>Export</BulkButton>
+            <BulkButton onClick={deleteSelected} disabled={!selectedIds.length} danger>Delete</BulkButton>
+            {selectedIds.length > 0 && (
+              <button onClick={clearSelection} className="rounded-lg px-3 py-1.5 text-xs text-slate-500 hover:text-slate-300 transition-colors">
+                Clear
+              </button>
+            )}
+          </div>
+          <div className="flex items-center gap-2">
+            <button onClick={importProfiles} className="rounded-lg bg-white/5 border border-white/10 px-3 py-1.5 text-xs font-medium text-slate-300 hover:bg-white/10 transition-colors">
+              Import
+            </button>
+            <button
+              ref={sortRef}
+              onClick={() => {
+                if (sortRef.current) {
+                  const rect = sortRef.current.getBoundingClientRect()
+                  setSortMenuPos({ x: rect.left, y: rect.bottom + 4 })
+                }
+                setShowSortMenu(v => !v)
+              }}
+              className={`rounded-lg border px-3 py-1.5 text-xs font-medium transition-colors ${
+                sortBy !== 'default'
+                  ? 'border-purple-500/30 bg-purple-500/10 text-purple-400'
+                  : 'border-white/10 bg-white/5 text-slate-300 hover:bg-white/10'
+              }`}
+            >
+              {sortBy !== 'default' ? SORT_LABELS[sortBy] : 'Sort'}
+            </button>
+          </div>
+        </div>
+
+        {/* ── Header — Compact ── */}
+        <div className="no-drag flex items-center justify-between px-4 py-2">
           <div>
-            <h1 className="text-xl font-semibold text-white">Hồ sơ</h1>
-            <p className="mt-1 text-xs text-slate-500">
-              {selectedGroup?.name ?? 'Tất cả nhóm'} · {filtered.length} hồ sơ đang hiển thị
+            <h1 className="text-lg font-semibold text-white">Profiles</h1>
+            <p className="text-xs text-slate-400">
+              {selectedGroup?.name ?? 'All'} · {filtered.length} shown
             </p>
           </div>
-
           <div className="flex items-center gap-2">
             <button
               onClick={async () => {
@@ -169,144 +278,94 @@ export default function ProfilesPage() {
                 setTimeout(() => setIsReloading(false), 500)
               }}
               disabled={isReloading}
-              className="rounded-lg border border-white/10 bg-white/[0.04] px-3 py-2 text-sm font-medium text-slate-300 hover:bg-white/[0.08] disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
+              className="rounded-lg bg-white/5 border border-white/10 px-3 py-1.5 text-sm text-slate-300 hover:bg-white/10 disabled:opacity-50 transition-colors flex items-center gap-2"
             >
               {isReloading && (
-                <svg className="animate-spin h-4 w-4" fill="none" viewBox="0 0 24 24">
-                  <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
-                  <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                <svg className="animate-spin h-3.5 w-3.5" fill="none" viewBox="0 0 24 24">
+                  <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                  <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
                 </svg>
               )}
-              Làm mới
+              Refresh
             </button>
             <button
               onClick={() => setShowCreate(true)}
-              className="rounded-lg bg-purple-500 px-4 py-2 text-sm font-semibold text-white shadow-[0_0_24px_rgba(168,85,247,0.22)] hover:bg-purple-400"
+              className="rounded-lg bg-gradient-to-r from-violet-600 to-purple-600 px-4 py-2 text-sm font-medium text-white hover:shadow-[0_0_20px_rgba(139,92,246,0.4)] transition-all"
             >
-              + Tạo hồ sơ
+              + New
             </button>
           </div>
         </div>
 
-        <div className="no-drag grid grid-cols-4 gap-3 px-6 pb-4">
-          <CompactStat label="Tổng hồ sơ" value={filtered.length} />
-          <CompactStat label="Đang mở" value={openCount} tone="purple" />
-          <CompactStat label="Đã đóng" value={closedCount} tone="orange" />
-          <CompactStat label="Đã chọn" value={selectedCount} tone="purple" />
+        {/* ── Stats — Compact ── */}
+        <div className="no-drag grid grid-cols-4 gap-2 px-4 pb-2">
+          <CompactStat label="Total" value={filtered.length} />
+          <CompactStat label="Open" value={openCount} tone="purple" />
+          <CompactStat label="Closed" value={closedCount} tone="orange" />
+          <CompactStat label="Selected" value={selectedCount} tone="purple" />
         </div>
 
-        <div className="no-drag px-6 pb-3">
-          <div className="flex flex-wrap items-end gap-3">
-            <FieldShell label="Tìm kiếm" className="min-w-[320px] flex-1">
-              <div className="relative">
-                <span className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-slate-500">⌕</span>
-                <input
-                  value={searchQuery}
-                  onChange={(event) => setSearchQuery(event.target.value)}
-                  placeholder="Tên, ghi chú, proxy..."
-                  className="h-10 w-full rounded-lg border border-white/10 bg-[#111827]/70 pl-9 pr-3 text-sm text-white outline-none transition-colors placeholder:text-slate-600 focus:border-purple-400/60"
-                />
-              </div>
-            </FieldShell>
-
-            <FieldShell label="Trạng thái hồ sơ" className="w-56">
-              <select
-                value={statusFilter}
-                onChange={(event) => setStatusFilter(event.target.value as StatusFilter)}
-                className="h-10 w-full rounded-lg border border-white/10 bg-[#111827]/70 px-3 text-sm text-white outline-none focus:border-purple-400/60"
-              >
-                <option value="all">Tất cả</option>
-                <option value="open">Đang mở</option>
-                <option value="closed">Đã đóng</option>
-              </select>
-            </FieldShell>
-
-            <FieldShell label="Chế độ hiển thị" className="w-52">
-              <div className="flex h-10 items-center gap-2 rounded-lg border border-white/10 bg-[#111827]/70 px-3 text-sm text-slate-300">
-                <span className="text-purple-400">◉</span>
-                Hồ sơ
-              </div>
-            </FieldShell>
-          </div>
-        </div>
-
-        <div className="no-drag flex flex-wrap items-center justify-between gap-3 px-6 pb-3">
-          <div className="flex flex-wrap items-center gap-2">
-            <BulkButton disabled={!selectedIds.length}>Automation</BulkButton>
-            <BulkButton disabled={!selectedIds.length}>Mở</BulkButton>
-            <BulkButton disabled={!selectedIds.length}>Đóng</BulkButton>
-            <BulkButton
-              onClick={() => {
-                setMoveTargetGroupId('')
-                setShowMoveGroupModal(true)
-              }}
-              disabled={!selectedIds.length}
-            >
-              Chuyển nhóm
-            </BulkButton>
-            <BulkButton onClick={exportSelected} disabled={!selectedIds.length}>Xuất</BulkButton>
-            <BulkButton onClick={deleteSelected} disabled={!selectedIds.length} danger>Xóa</BulkButton>
-            {selectedIds.length > 0 && (
-              <button
-                onClick={clearSelection}
-                className="rounded-lg px-3 py-2 text-xs font-medium text-slate-500 hover:bg-white/5 hover:text-white"
-              >
-                Bỏ chọn
-              </button>
-            )}
-          </div>
-
+        {/* ── Filters — Single line, compact ── */}
+        <div className="no-drag px-4 pb-3">
           <div className="flex items-center gap-2">
-            <button
-              onClick={importProfiles}
-              className="rounded-lg border border-white/10 bg-white/[0.04] px-3 py-2 text-xs font-semibold text-slate-300 hover:bg-white/[0.08]"
+            <div className="relative flex-1">
+              <span className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-slate-500 text-sm">⌕</span>
+              <input
+                value={searchQuery}
+                onChange={(event) => setSearchQuery(event.target.value)}
+                placeholder="Search name, notes, proxy..."
+                className="h-8 w-full rounded-lg border border-purple-500/10 bg-white/5 pl-9 pr-3 text-sm text-slate-300 outline-none transition-colors placeholder:text-slate-500 focus:border-purple-500/30"
+              />
+            </div>
+            <select
+              value={statusFilter}
+              onChange={(event) => setStatusFilter(event.target.value as StatusFilter)}
+              className="h-8 w-32 rounded-lg border border-purple-500/10 bg-white/5 px-3 text-sm text-slate-300 outline-none focus:border-purple-500/30 transition-colors"
             >
-              Nhập tài nguyên
-            </button>
-            <button className="rounded-lg border border-white/10 bg-white/[0.04] px-3 py-2 text-xs font-semibold text-slate-300 hover:bg-white/[0.08]">
-              Sắp xếp
-            </button>
+              <option value="all">All</option>
+              <option value="open">Open</option>
+              <option value="closed">Closed</option>
+            </select>
           </div>
         </div>
 
-        <div className="min-h-0 flex-1 px-6 pb-5">
-          <div className="h-full overflow-hidden rounded-xl border border-purple-500/15 bg-[#111827]/70 shadow-[0_0_40px_rgba(0,0,0,0.18)]">
+        <div className="min-h-0 flex-1 px-4 pb-4">
+          <div className="h-full overflow-hidden rounded-xl border border-purple-500/10 bg-surface/50 backdrop-blur-md">
             <div className="h-full overflow-auto">
               <table className="w-full min-w-[980px] text-left">
-                <thead className="sticky top-0 z-10 bg-[#111827]">
-                  <tr className="border-b border-white/6">
-                    <th className="w-12 px-4 py-3">
+                <thead className="sticky top-0 z-20 bg-[#13111F] border-b border-purple-500/10">
+                  <tr>
+                    <th className="w-12 px-3 py-2">
                       <input
                         type="checkbox"
                         checked={allSelected}
                         onChange={() => (allSelected ? clearSelection() : selectAll(filtered.map((profile) => profile.id)))}
-                        className="h-4 w-4 accent-purple-500"
+                        className="h-4 w-4 rounded border-purple-500/30 bg-white/5 text-purple-500"
                       />
                     </th>
-                    <HeaderCell>Profile ID</HeaderCell>
-                    <HeaderCell>Nhóm</HeaderCell>
-                    <HeaderCell>Tên</HeaderCell>
-                    <HeaderCell>Ghi chú</HeaderCell>
+                    <HeaderCell>ID</HeaderCell>
+                    <HeaderCell>Group</HeaderCell>
+                    <HeaderCell>Name</HeaderCell>
+                    <HeaderCell>Notes</HeaderCell>
                     <HeaderCell>Proxy</HeaderCell>
-                    <HeaderCell>Thời hạn</HeaderCell>
-                    <HeaderCell>Hành động</HeaderCell>
+                    <th className="sticky right-0 z-30 bg-[#13111F] px-3 py-2 text-xs font-medium text-slate-400">Actions</th>
                   </tr>
                 </thead>
                 <tbody>
                   {filtered.length === 0 ? (
                     <tr>
-                      <td colSpan={8} className="py-24 text-center">
-                        <div className="mx-auto flex max-w-sm flex-col items-center gap-3">
-                          <div className="flex h-14 w-14 items-center justify-center rounded-full border border-purple-500/20 bg-purple-500/10 text-2xl text-purple-200">
+                      <td colSpan={7} className="py-16 text-center">
+                        <div className="mx-auto flex max-w-sm flex-col items-center gap-2">
+                          <div className="flex h-12 w-12 items-center justify-center rounded-full border border-purple-500/20 bg-purple-500/10 text-xl text-purple-300">
                             ▣
                           </div>
-                          <p className="text-sm font-medium text-white">Chưa có hồ sơ nào</p>
-                          <p className="text-xs text-slate-500">Tạo hồ sơ đầu tiên để bắt đầu quản lý tài khoản.</p>
+                          <p className="text-sm font-medium text-white">No profiles</p>
+                          <p className="text-xs text-slate-400">Create your first profile to get started</p>
                           <button
                             onClick={() => setShowCreate(true)}
-                            className="rounded-lg bg-purple-500 px-4 py-2 text-xs font-semibold text-white hover:bg-purple-400"
+                            className="mt-2 rounded-lg bg-gradient-to-r from-violet-600 to-purple-600 px-4 py-2 text-sm font-medium text-white hover:shadow-[0_0_20px_rgba(139,92,246,0.4)] transition-all"
                           >
-                            Tạo hồ sơ đầu tiên
+                            Create Profile
                           </button>
                         </div>
                       </td>
@@ -328,8 +387,8 @@ export default function ProfilesPage() {
             </div>
           </div>
 
-          <div className="flex justify-end pt-3 text-xs text-slate-500">
-            1-{filtered.length} trên {filtered.length}
+          <div className="flex justify-end pt-2 text-xs text-slate-500">
+            {filtered.length} total
           </div>
         </div>
 
@@ -359,6 +418,13 @@ export default function ProfilesPage() {
           />
         )}
         
+        {showAutoModal && (
+          <AutomationQuickModal
+            selectedProfiles={profiles.filter(p => selectedIds.includes(p.id))}
+            onClose={() => setShowAutoModal(false)}
+          />
+        )}
+
         {showMoveGroupModal && (
           <MoveGroupModal
             selectedIds={selectedIds}
@@ -370,6 +436,24 @@ export default function ProfilesPage() {
               setShowMoveGroupModal(false)
               setMoveTargetGroupId('')
             }}
+          />
+        )}
+
+        {showSortMenu && (
+          <SortMenu
+            pos={sortMenuPos}
+            current={sortBy}
+            onSelect={setSortBy}
+            onClose={() => setShowSortMenu(false)}
+          />
+        )}
+
+        {importData && (
+          <ImportPreviewModal
+            importProfiles={importData.profiles}
+            existingProfiles={profiles}
+            onConfirm={handleConfirmImport}
+            onClose={() => setImportData(null)}
           />
         )}
       </section>
@@ -474,27 +558,44 @@ function GroupItem({
 
 function GroupPanel({
   groups,
-  profiles,
   selectedGroupId,
   setSelectedGroupId,
   collapsed,
   setCollapsed,
+  width,
+  onWidthChange,
   onCreateGroup,
   onEditGroup,
   onDeleteGroup
 }: {
   groups: Array<{ id: string; name: string }>
-  profiles: Profile[]
   selectedGroupId: string | null
   setSelectedGroupId: (id: string | null) => void
   collapsed: boolean
   setCollapsed: (value: boolean) => void
+  width: number
+  onWidthChange: (w: number) => void
   onCreateGroup: () => void
   onEditGroup: (group: { id: string; name: string }) => void
   onDeleteGroup: (group: { id: string; name: string }) => void
 }) {
   const [openMenuId, setOpenMenuId] = useState<string | null>(null)
-  const noGroupCount = profiles.filter((profile) => !profile.groupId).length
+
+  const startResize = (e: React.MouseEvent) => {
+    e.preventDefault()
+    const startX = e.clientX
+    const startW = width
+    const onMove = (ev: MouseEvent) => {
+      const next = Math.max(160, Math.min(400, startW + ev.clientX - startX))
+      onWidthChange(next)
+    }
+    const onUp = () => {
+      document.removeEventListener('mousemove', onMove)
+      document.removeEventListener('mouseup', onUp)
+    }
+    document.addEventListener('mousemove', onMove)
+    document.addEventListener('mouseup', onUp)
+  }
 
   if (collapsed) {
     return (
@@ -515,7 +616,18 @@ function GroupPanel({
   }
 
   return (
-    <aside className="group-panel no-drag flex w-64 flex-shrink-0 flex-col border-r border-purple-500/10 bg-[#0F1020]/70 px-4 pb-4">
+    <aside
+      className="group-panel no-drag relative flex flex-shrink-0 flex-col border-r border-purple-500/10 bg-[#0F1020]/70 px-4 pb-4"
+      style={{ width }}
+    >
+      {/* Drag handle */}
+      <div
+        onMouseDown={startResize}
+        className="absolute right-0 top-0 bottom-0 w-1 cursor-col-resize hover:bg-purple-500/40 transition-colors group/resizer z-20"
+        title="Kéo để thay đổi chiều rộng"
+      >
+        <div className="absolute right-0 top-1/2 -translate-y-1/2 h-8 w-1 rounded-full bg-purple-500/0 group-hover/resizer:bg-purple-500/60 transition-colors" />
+      </div>
       <div className="drag-region h-8 flex-shrink-0" />
       <div className="mb-4 flex items-center justify-between">
         <div>
@@ -660,16 +772,16 @@ function MoveGroupModal({
 
 function CompactStat({ label, value, tone = 'slate' }: { label: string; value: number; tone?: 'slate' | 'violet' | 'orange' | 'purple' }) {
   const toneClass = {
-    slate: 'text-slate-200',
-    violet: 'text-violet-300',
+    slate: 'text-white',
+    violet: 'text-purple-300',
     orange: 'text-orange-300',
     purple: 'text-purple-300'
   }[tone]
 
   return (
-    <div className="rounded-xl border border-purple-500/15 bg-purple-500/[0.08] px-4 py-3">
-      <p className={`text-2xl font-bold ${toneClass}`}>{value}</p>
-      <p className="mt-1 text-xs text-slate-500">{label}</p>
+    <div className="rounded-xl border border-purple-500/10 bg-white/[0.04] backdrop-blur-md px-4 py-3">
+      <p className={`text-2xl font-semibold ${toneClass}`}>{value}</p>
+      <p className="mt-1 text-xs text-slate-400">{label}</p>
     </div>
   )
 }
@@ -698,10 +810,10 @@ function BulkButton({
     <button
       onClick={onClick}
       disabled={disabled}
-      className={`rounded-lg px-3 py-2 text-xs font-semibold transition-all disabled:cursor-not-allowed disabled:opacity-35 ${
+      className={`rounded-lg px-4 py-2 text-sm font-medium transition-colors disabled:cursor-not-allowed disabled:opacity-50 ${
         danger
-          ? 'border border-red-500/20 bg-red-500/10 text-red-300 hover:bg-red-500/20'
-          : 'border border-white/10 bg-white/[0.05] text-slate-300 hover:bg-white/[0.09]'
+          ? 'bg-red-500/10 text-red-400 hover:bg-red-500/20'
+          : 'bg-white/5 border border-white/10 text-slate-300 hover:bg-white/10'
       }`}
     >
       {children}
@@ -711,8 +823,409 @@ function BulkButton({
 
 function HeaderCell({ children }: { children: ReactNode }) {
   return (
-    <th className="px-4 py-3 text-xs font-semibold uppercase tracking-wider text-slate-500">
+    <th className="px-3 py-2 text-xs font-medium uppercase tracking-wider text-slate-400">
       {children}
     </th>
+  )
+}
+
+// ── Automation Quick Modal ────────────────────────────────────────────────────
+
+type AutoTab = 'options' | 'config' | 'input' | 'info'
+
+function AutomationQuickModal({ selectedProfiles, onClose }: {
+  selectedProfiles: Profile[]
+  onClose: () => void
+}) {
+  const [activeTab, setActiveTab] = useState<AutoTab>('options')
+  const [scripts, setScripts] = useState<AutomationScript[]>([])
+  const [scriptGroup, setScriptGroup] = useState('all')
+  const [scriptId, setScriptId] = useState('')
+  const [taskType, setTaskType] = useState<'now' | 'schedule'>('now')
+  const [isRunning, setIsRunning] = useState(false)
+
+  useEffect(() => {
+    window.api.scripts.getAll().then(setScripts)
+  }, [])
+
+  const filtered = scriptGroup === 'all' ? scripts : scripts.filter(s => s.name.toLowerCase().includes(scriptGroup.toLowerCase()))
+  const selectedScript = scripts.find(s => s.id === scriptId)
+
+  const handleCreate = async () => {
+    if (!scriptId) return
+    if (taskType === 'now') {
+      setIsRunning(true)
+      for (const profile of selectedProfiles) {
+        await window.api.scripts.run(scriptId, profile)
+      }
+      setIsRunning(false)
+      onClose()
+    } else {
+      await window.api.scheduler.create({
+        scriptId,
+        scriptName: selectedScript?.name ?? '',
+        profileIds: selectedProfiles.map(p => p.id),
+        type: 'interval',
+        intervalMs: 60 * 60 * 1000,
+      })
+      onClose()
+    }
+  }
+
+  const TABS: { key: AutoTab; label: string }[] = [
+    { key: 'options', label: 'Tùy chọn' },
+    { key: 'config', label: 'Cấu hình chạy' },
+    { key: 'input', label: 'Đầu vào' },
+    { key: 'info', label: 'Thông tin' },
+  ]
+
+  return createPortal(
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm">
+      <div className="w-[680px] max-w-[calc(100vw-48px)] rounded-2xl border border-white/10 bg-[#1B2333] shadow-[0_24px_80px_rgba(0,0,0,0.6)] flex flex-col">
+        {/* Header */}
+        <div className="flex items-center justify-between border-b border-white/[0.07] px-6 py-4">
+          <h3 className="text-base font-semibold text-white">Automation</h3>
+          <button onClick={onClose} className="text-slate-500 hover:text-white transition-colors text-lg leading-none">✕</button>
+        </div>
+
+        {/* Tabs */}
+        <div className="flex border-b border-white/[0.07] px-6">
+          {TABS.map(tab => (
+            <button
+              key={tab.key}
+              onClick={() => setActiveTab(tab.key)}
+              className={`flex items-center gap-2 border-b-2 px-4 py-3 text-xs font-medium transition-all ${
+                activeTab === tab.key
+                  ? 'border-purple-500 text-white'
+                  : 'border-transparent text-slate-500 hover:text-slate-300'
+              }`}
+            >
+              {tab.key === 'options' && (
+                <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 12h16M4 18h7" />
+                </svg>
+              )}
+              {tab.label}
+            </button>
+          ))}
+        </div>
+
+        {/* Body */}
+        <div className="flex-1 px-6 py-5 space-y-5 min-h-[260px]">
+          {activeTab === 'options' && (
+            <>
+              {/* Hồ sơ */}
+              <div className="flex items-start gap-4">
+                <div className="w-28 shrink-0 pt-1">
+                  <span className="text-sm text-slate-400">Hồ sơ</span>
+                  <span className="ml-2 rounded-full bg-purple-500/20 px-2 py-0.5 text-xs font-bold text-purple-300">{selectedProfiles.length}</span>
+                </div>
+                <div className="flex flex-wrap gap-2">
+                  {selectedProfiles.map(p => (
+                    <span key={p.id} className="rounded-md bg-purple-500/20 px-3 py-1 font-mono text-xs font-semibold text-purple-200">
+                      {p.id.slice(0, 6).toUpperCase()}
+                    </span>
+                  ))}
+                </div>
+              </div>
+
+              {/* Quy trình */}
+              <div className="flex items-center gap-4">
+                <span className="w-28 shrink-0 text-sm text-slate-400">Quy trình</span>
+                <div className="flex flex-1 gap-2">
+                  <select
+                    value={scriptGroup}
+                    onChange={e => setScriptGroup(e.target.value)}
+                    className="w-28 rounded-lg border border-white/[0.08] bg-white/[0.04] px-3 py-2 text-xs text-slate-300 focus:outline-none focus:border-purple-500/40"
+                  >
+                    <option value="all" className="bg-[#1B2333]">All</option>
+                  </select>
+                  <select
+                    value={scriptId}
+                    onChange={e => setScriptId(e.target.value)}
+                    className="flex-1 rounded-lg border border-purple-500/40 bg-white/[0.04] px-3 py-2 text-xs text-white focus:outline-none focus:border-purple-500/60"
+                  >
+                    <option value="" className="bg-[#1B2333]">Vui lòng chọn quy trình</option>
+                    {filtered.map(s => (
+                      <option key={s.id} value={s.id} className="bg-[#1B2333]">{s.name}</option>
+                    ))}
+                  </select>
+                </div>
+              </div>
+
+              {/* Loại nhiệm vụ */}
+              <div className="flex items-center gap-4">
+                <span className="w-28 shrink-0 text-sm text-slate-400">Loại nhiệm vụ</span>
+                <div className="flex gap-2">
+                  <button
+                    onClick={() => setTaskType('now')}
+                    className={`rounded-lg border px-4 py-2 text-xs font-medium transition-all ${
+                      taskType === 'now'
+                        ? 'border-purple-500/50 bg-purple-500/10 text-white'
+                        : 'border-white/[0.08] text-slate-500 hover:text-slate-300'
+                    }`}
+                  >Thực hiện ngay</button>
+                  <button
+                    onClick={() => setTaskType('schedule')}
+                    className={`rounded-lg border px-4 py-2 text-xs font-medium transition-all ${
+                      taskType === 'schedule'
+                        ? 'border-purple-500/50 bg-purple-500/10 text-white'
+                        : 'border-white/[0.08] text-slate-500 hover:text-slate-300'
+                    }`}
+                  >Lên lịch thực hiện</button>
+                </div>
+              </div>
+
+              {scripts.length === 0 && (
+                <p className="text-xs text-slate-600 pl-32">Chưa có quy trình nào. Tạo script trong trang Automation trước.</p>
+              )}
+            </>
+          )}
+
+          {activeTab !== 'options' && (
+            <div className="flex flex-col items-center justify-center h-40 gap-3">
+              <span className="text-3xl">🔧</span>
+              <p className="text-sm text-slate-600">Chức năng đang được phát triển</p>
+            </div>
+          )}
+        </div>
+
+        {/* Footer */}
+        <div className="flex items-center justify-end gap-3 border-t border-white/[0.07] px-6 py-4">
+          <button
+            onClick={onClose}
+            className="rounded-lg border border-white/[0.08] px-5 py-2 text-sm font-medium text-slate-300 hover:bg-white/[0.05] transition-colors"
+          >Đóng</button>
+          <button
+            onClick={handleCreate}
+            disabled={!scriptId || isRunning}
+            className="rounded-lg bg-purple-600 px-5 py-2 text-sm font-semibold text-white hover:bg-purple-500 disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
+          >
+            {isRunning ? 'Đang chạy...' : 'Tạo'}
+          </button>
+        </div>
+      </div>
+    </div>,
+    document.body
+  )
+}
+
+// ── Sort Menu ─────────────────────────────────────────────────────────────────
+
+function SortMenu({
+  pos,
+  current,
+  onSelect,
+  onClose,
+}: {
+  pos: { x: number; y: number }
+  current: SortBy
+  onSelect: (sort: SortBy) => void
+  onClose: () => void
+}) {
+  const items: { value: SortBy; label: string }[] = [
+    { value: 'default', label: 'Mặc định' },
+    { value: 'name-asc', label: 'Tên A → Z' },
+    { value: 'name-desc', label: 'Tên Z → A' },
+    { value: 'created-newest', label: 'Ngày tạo: Mới nhất' },
+    { value: 'created-oldest', label: 'Ngày tạo: Cũ nhất' },
+    { value: 'status', label: 'Đang mở lên đầu' },
+  ]
+
+  return createPortal(
+    <>
+      <div className="fixed inset-0 z-40" onClick={onClose} />
+      <div
+        className="fixed z-50 w-52 rounded-xl border border-white/10 bg-[#1F2937] py-1.5 shadow-[0_8px_32px_rgba(0,0,0,0.6)]"
+        style={{ top: pos.y, left: pos.x }}
+      >
+        {items.map((item) => (
+          <button
+            key={item.value}
+            onClick={() => { onSelect(item.value); onClose() }}
+            className={`flex w-full items-center justify-between px-4 py-2.5 text-left text-sm transition-colors ${
+              current === item.value
+                ? 'bg-purple-500/10 text-purple-200'
+                : 'text-slate-300 hover:bg-white/5 hover:text-white'
+            }`}
+          >
+            {item.label}
+            {current === item.value && <span className="text-purple-400 text-xs">✓</span>}
+          </button>
+        ))}
+      </div>
+    </>,
+    document.body
+  )
+}
+
+// ── Import Preview Modal ──────────────────────────────────────────────────────
+
+function ImportPreviewModal({
+  importProfiles,
+  existingProfiles,
+  onConfirm,
+  onClose,
+}: {
+  importProfiles: any[]
+  existingProfiles: Profile[]
+  onConfirm: (selected: any[]) => Promise<void>
+  onClose: () => void
+}) {
+  const existingNames = useMemo(
+    () => new Set(existingProfiles.map((p) => p.name.toLowerCase())),
+    [existingProfiles]
+  )
+  const [selected, setSelected] = useState<Set<number>>(
+    () => new Set(importProfiles.map((_, i) => i))
+  )
+  const [isImporting, setIsImporting] = useState(false)
+
+  const toggleRow = (i: number) => {
+    setSelected((prev) => {
+      const next = new Set(prev)
+      next.has(i) ? next.delete(i) : next.add(i)
+      return next
+    })
+  }
+
+  const allSelected = selected.size === importProfiles.length
+  const toggleAll = () =>
+    setSelected(allSelected ? new Set() : new Set(importProfiles.map((_, i) => i)))
+
+  const conflictCount = importProfiles.filter((p) =>
+    existingNames.has(p.name?.toLowerCase?.())
+  ).length
+
+  const handleConfirm = async () => {
+    setIsImporting(true)
+    await onConfirm(importProfiles.filter((_, i) => selected.has(i)))
+    setIsImporting(false)
+  }
+
+  return createPortal(
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm">
+      <div className="flex max-h-[80vh] w-[700px] max-w-[calc(100vw-48px)] flex-col rounded-2xl border border-white/10 bg-[#1B2333] shadow-[0_24px_80px_rgba(0,0,0,0.6)]">
+        {/* Header */}
+        <div className="flex items-center justify-between border-b border-white/[0.07] px-6 py-4">
+          <div>
+            <h3 className="text-base font-semibold text-white">Xem trước nhập hồ sơ</h3>
+            <p className="mt-0.5 text-xs text-slate-500">
+              {importProfiles.length} hồ sơ trong file · {selected.size} được chọn nhập
+              {conflictCount > 0 && (
+                <span className="ml-2 text-orange-400">{conflictCount} tên trùng</span>
+              )}
+            </p>
+          </div>
+          <button onClick={onClose} className="text-lg leading-none text-slate-500 hover:text-white">
+            ✕
+          </button>
+        </div>
+
+        {/* Table */}
+        <div className="flex-1 overflow-y-auto">
+          <table className="w-full text-left">
+            <thead className="sticky top-0 border-b border-white/[0.07] bg-[#1B2333]">
+              <tr>
+                <th className="px-4 py-3">
+                  <input
+                    type="checkbox"
+                    checked={allSelected}
+                    onChange={toggleAll}
+                    className="h-4 w-4 accent-purple-500"
+                  />
+                </th>
+                <th className="px-4 py-3 text-xs font-semibold uppercase tracking-wider text-slate-500">
+                  Tên hồ sơ
+                </th>
+                <th className="px-4 py-3 text-xs font-semibold uppercase tracking-wider text-slate-500">
+                  Proxy
+                </th>
+                <th className="px-4 py-3 text-xs font-semibold uppercase tracking-wider text-slate-500">
+                  Trạng thái
+                </th>
+              </tr>
+            </thead>
+            <tbody>
+              {importProfiles.map((profile, i) => {
+                const isConflict = existingNames.has(profile.name?.toLowerCase?.())
+                const isSelected = selected.has(i)
+                return (
+                  <tr
+                    key={i}
+                    onClick={() => toggleRow(i)}
+                    className={`cursor-pointer border-b border-white/[0.04] transition-colors ${
+                      isSelected
+                        ? 'bg-purple-500/[0.05] hover:bg-purple-500/[0.08]'
+                        : 'opacity-40 hover:opacity-60'
+                    }`}
+                  >
+                    <td className="px-4 py-3">
+                      <input
+                        type="checkbox"
+                        checked={isSelected}
+                        onChange={() => toggleRow(i)}
+                        onClick={(e) => e.stopPropagation()}
+                        className="h-4 w-4 accent-purple-500"
+                      />
+                    </td>
+                    <td className="px-4 py-3">
+                      <div className="flex items-center gap-2">
+                        <span className="text-sm font-medium text-white">{profile.name || '—'}</span>
+                        {isConflict && (
+                          <span className="rounded bg-orange-500/15 px-2 py-0.5 text-[10px] font-semibold text-orange-400">
+                            Tên trùng
+                          </span>
+                        )}
+                      </div>
+                      {profile.notes && (
+                        <span className="line-clamp-1 text-xs text-slate-600">{profile.notes}</span>
+                      )}
+                    </td>
+                    <td className="px-4 py-3">
+                      {profile.proxy?.type !== 'none' && profile.proxy?.host ? (
+                        <span className="font-mono text-xs text-slate-300">
+                          {profile.proxy.host}:{profile.proxy.port}
+                        </span>
+                      ) : (
+                        <span className="text-xs text-slate-600">Không</span>
+                      )}
+                    </td>
+                    <td className="px-4 py-3">
+                      {isConflict ? (
+                        <span className="text-xs text-orange-400">Nhập thêm</span>
+                      ) : (
+                        <span className="text-xs text-emerald-400">Mới</span>
+                      )}
+                    </td>
+                  </tr>
+                )
+              })}
+            </tbody>
+          </table>
+        </div>
+
+        {/* Footer */}
+        <div className="flex items-center justify-between border-t border-white/[0.07] px-6 py-4">
+          <p className="text-xs text-slate-500">Hồ sơ trùng tên sẽ được nhập thêm (không ghi đè)</p>
+          <div className="flex gap-3">
+            <button
+              onClick={onClose}
+              className="rounded-lg border border-white/[0.08] px-5 py-2 text-sm font-medium text-slate-300 hover:bg-white/[0.05] transition-colors"
+            >
+              Hủy
+            </button>
+            <button
+              onClick={handleConfirm}
+              disabled={selected.size === 0 || isImporting}
+              className="rounded-lg bg-purple-600 px-5 py-2 text-sm font-semibold text-white hover:bg-purple-500 disabled:cursor-not-allowed disabled:opacity-30 transition-colors"
+            >
+              {isImporting ? 'Đang nhập...' : `Nhập ${selected.size} hồ sơ`}
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>,
+    document.body
   )
 }

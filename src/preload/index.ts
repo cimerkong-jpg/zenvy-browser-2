@@ -1,5 +1,5 @@
 import { contextBridge, ipcRenderer } from 'electron'
-import type { Profile, Group, Tag } from '../shared/types'
+import type { Profile, Group, AutomationScript, ScriptExecution, ScheduledTask, TaskHistoryRecord, AppSettings, UserProfile, UserStats, ExtensionInfo } from '../shared/types'
 
 const api = {
   groups: {
@@ -19,12 +19,9 @@ const api = {
     deleteMany: (ids: string[]): Promise<void> => ipcRenderer.invoke('profiles:deleteMany', ids),
     duplicate: (id: string): Promise<Profile | null> => ipcRenderer.invoke('profiles:duplicate', id),
     export: (ids: string[]): Promise<string> => ipcRenderer.invoke('profiles:export', ids),
-    import: (jsonData: string): Promise<Profile[]> => ipcRenderer.invoke('profiles:import', jsonData)
-  },
-  tags: {
-    getAll: (): Promise<Tag[]> => ipcRenderer.invoke('tags:getAll'),
-    create: (name: string, color: string): Promise<Tag> => ipcRenderer.invoke('tags:create', name, color),
-    delete: (id: string): Promise<void> => ipcRenderer.invoke('tags:delete', id)
+    import: (jsonData: string): Promise<Profile[]> => ipcRenderer.invoke('profiles:import', jsonData),
+    setVariables: (profileId: string, variables: Record<string, string>): Promise<Profile | null> =>
+      ipcRenderer.invoke('profiles:setVariables', profileId, variables)
   },
   browser: {
     launch: (profile: Profile): Promise<{ success: boolean; error?: string }> =>
@@ -57,8 +54,75 @@ const api = {
     export: (template: any) => ipcRenderer.invoke('templates:export', template),
     import: () => ipcRenderer.invoke('templates:import')
   },
+  scripts: {
+    getAll: (): Promise<AutomationScript[]> => ipcRenderer.invoke('scripts:getAll'),
+    get: (id: string): Promise<AutomationScript | null> => ipcRenderer.invoke('scripts:get', id),
+    create: (data: Pick<AutomationScript, 'name' | 'description' | 'code'>): Promise<AutomationScript> =>
+      ipcRenderer.invoke('scripts:create', data),
+    update: (id: string, data: Partial<Pick<AutomationScript, 'name' | 'description' | 'code'>>): Promise<AutomationScript | null> =>
+      ipcRenderer.invoke('scripts:update', id, data),
+    delete: (id: string): Promise<void> => ipcRenderer.invoke('scripts:delete', id),
+    run: (scriptId: string, profile: Profile): Promise<{ success: boolean; data?: ScriptExecution; error?: string }> =>
+      ipcRenderer.invoke('scripts:run', scriptId, profile),
+    onExecutionUpdate: (callback: (execution: ScriptExecution) => void) => {
+      const listener = (_event: Electron.IpcRendererEvent, execution: ScriptExecution) => callback(execution)
+      ipcRenderer.on('automation:execution-update', listener)
+      return () => ipcRenderer.removeListener('automation:execution-update', listener)
+    }
+  },
+  history: {
+    getAll: (): Promise<TaskHistoryRecord[]> => ipcRenderer.invoke('history:getAll'),
+    delete: (id: string): Promise<void> => ipcRenderer.invoke('history:delete', id),
+    clear: (): Promise<void> => ipcRenderer.invoke('history:clear')
+  },
+  scheduler: {
+    getAll: (): Promise<ScheduledTask[]> => ipcRenderer.invoke('scheduler:getAll'),
+    create: (data: Pick<ScheduledTask, 'scriptId' | 'scriptName' | 'profileIds' | 'type' | 'runAt' | 'intervalMs'>): Promise<ScheduledTask> =>
+      ipcRenderer.invoke('scheduler:create', data),
+    update: (id: string, data: Partial<Pick<ScheduledTask, 'scriptId' | 'scriptName' | 'profileIds' | 'type' | 'runAt' | 'intervalMs' | 'enabled'>>): Promise<ScheduledTask | null> =>
+      ipcRenderer.invoke('scheduler:update', id, data),
+    toggle: (id: string, enabled: boolean): Promise<ScheduledTask | null> =>
+      ipcRenderer.invoke('scheduler:toggle', id, enabled),
+    delete: (id: string): Promise<void> => ipcRenderer.invoke('scheduler:delete', id)
+  },
   app: {
     reload: (): Promise<void> => ipcRenderer.invoke('app:reload')
+  },
+  settings: {
+    get: (): Promise<AppSettings> => ipcRenderer.invoke('settings:get'),
+    update: (data: Partial<AppSettings>): Promise<AppSettings> => ipcRenderer.invoke('settings:update', data),
+    getChromePath: (): Promise<string> => ipcRenderer.invoke('settings:getChromePath'),
+    browseChrome: (): Promise<string | null> => ipcRenderer.invoke('settings:browseChrome'),
+    openDataDir: (): Promise<void> => ipcRenderer.invoke('settings:openDataDir'),
+    getDataDir: (): Promise<string> => ipcRenderer.invoke('settings:getDataDir'),
+    backup: (): Promise<Record<string, unknown>> => ipcRenderer.invoke('settings:backup'),
+    restore: (data: Record<string, unknown>): Promise<void> => ipcRenderer.invoke('settings:restore', data)
+  },
+  user: {
+    get: (): Promise<UserProfile> => ipcRenderer.invoke('user:get'),
+    update: (data: Partial<UserProfile>): Promise<UserProfile> => ipcRenderer.invoke('user:update', data),
+    getStats: (): Promise<UserStats> => ipcRenderer.invoke('user:getStats')
+  },
+  extensions: {
+    getAll: (profileId: string): Promise<ExtensionInfo[]> => ipcRenderer.invoke('extensions:getAll', profileId),
+    toggle: (profileId: string, extId: string, enabled: boolean): Promise<boolean> => 
+      ipcRenderer.invoke('extensions:toggle', profileId, extId, enabled),
+    copyTo: (fromProfileId: string, toProfileIds: string[], extIds: string[]): Promise<{ success: number; failed: number }> =>
+      ipcRenderer.invoke('extensions:copyTo', fromProfileId, toProfileIds, extIds)
+  },
+  auth: {
+    signUp: (email: string, password: string): Promise<{ user: any | null; error: string | null }> =>
+      ipcRenderer.invoke('auth:signUp', email, password),
+    signIn: (email: string, password: string): Promise<{ session: any | null; error: string | null }> =>
+      ipcRenderer.invoke('auth:signIn', email, password),
+    signOut: (): Promise<{ error: string | null }> =>
+      ipcRenderer.invoke('auth:signOut'),
+    getCurrentUser: (): Promise<any | null> =>
+      ipcRenderer.invoke('auth:getCurrentUser'),
+    getCurrentSession: (): Promise<any | null> =>
+      ipcRenderer.invoke('auth:getCurrentSession'),
+    isAuthenticated: (): Promise<boolean> =>
+      ipcRenderer.invoke('auth:isAuthenticated')
   }
 }
 

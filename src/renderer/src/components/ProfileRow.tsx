@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useRef, useState } from 'react'
 import type { Group, Profile } from '../../../shared/types'
 import { useStore } from '../store/useStore'
 import ContextMenu, { type ContextMenuItem } from './ContextMenu'
@@ -10,9 +10,6 @@ interface Props {
   isRunning: boolean
   isSelected: boolean
   onEdit: (profile: Profile) => void
-  onDragStart?: (profileId: string) => void
-  onDragEnd?: () => void
-  isDragging?: boolean
 }
 
 export default function ProfileRow({
@@ -21,21 +18,17 @@ export default function ProfileRow({
   isRunning,
   isSelected,
   onEdit,
-  onDragStart,
-  onDragEnd,
-  isDragging = false
 }: Props) {
   const { toggleSelect, loadAll } = useStore()
   const [showCookies, setShowCookies] = useState(false)
   const [contextMenu, setContextMenu] = useState<{ x: number; y: number } | null>(null)
+  const moreRef = useRef<HTMLButtonElement>(null)
 
   const group = groups.find((item) => item.id === profile.groupId)
-  const daysLeft = Math.max(Math.ceil((profile.updatedAt + 30 * 86400000 - Date.now()) / 86400000), 0)
 
   const handleLaunch = async () => {
     if (isRunning) await window.api.browser.close(profile.id)
     else await window.api.browser.launch(profile)
-
     useStore.getState().setRunningIds(await window.api.browser.running())
   }
 
@@ -48,6 +41,13 @@ export default function ProfileRow({
   const handleDuplicate = async () => {
     await window.api.profiles.duplicate(profile.id)
     await loadAll()
+  }
+
+  const openMoreMenu = () => {
+    if (moreRef.current) {
+      const rect = moreRef.current.getBoundingClientRect()
+      setContextMenu({ x: rect.left - 160, y: rect.bottom + 4 })
+    }
   }
 
   const contextMenuItems: ContextMenuItem[] = [
@@ -87,94 +87,137 @@ export default function ProfileRow({
   return (
     <>
       <tr
-        draggable
-        onDragStart={() => onDragStart?.(profile.id)}
-        onDragEnd={onDragEnd}
         onContextMenu={(event) => {
           event.preventDefault()
           setContextMenu({ x: event.clientX, y: event.clientY })
         }}
-        className={`border-b border-white/[0.06] transition-colors hover:bg-white/[0.035] ${
-          isSelected ? 'bg-purple-500/[0.08]' : ''
-        } ${isDragging ? 'opacity-50' : ''}`}
+        className={`group/row border-b border-purple-500/10 transition-colors hover:bg-white/5 ${
+          isSelected ? 'bg-purple-500/10' : ''
+        }`}
       >
-        <td className="px-4 py-4">
+        {/* Checkbox */}
+        <td className="px-3 py-2">
           <input
             type="checkbox"
             checked={isSelected}
             onChange={() => toggleSelect(profile.id)}
-            className="h-4 w-4 accent-purple-500"
+            className="h-4 w-4 rounded border-purple-500/30 bg-white/5 text-purple-500"
           />
         </td>
 
-        <td className="px-4 py-4">
-          <span className="font-mono text-sm font-semibold text-slate-200">
+        {/* Profile ID */}
+        <td className="px-3 py-2">
+          <span className="select-text font-mono text-sm font-medium text-slate-300 cursor-text">
             {profile.id.slice(0, 6).toUpperCase()}
           </span>
         </td>
 
-        <td className="px-4 py-4">
+        {/* Group */}
+        <td className="px-3 py-2">
           {group ? (
-            <span className="rounded-md bg-purple-500/10 px-2 py-1 text-xs font-semibold text-purple-200">
+            <span className="select-text rounded-md bg-purple-500/10 px-2 py-0.5 text-xs font-medium text-purple-300">
               {group.name}
             </span>
           ) : (
-            <span className="text-sm text-slate-600">-</span>
+            <span className="text-xs text-slate-500">—</span>
           )}
         </td>
 
-        <td className="px-4 py-4">
-          <div className="flex flex-col">
-            <span className="text-sm font-semibold text-white">{profile.name}</span>
-            <span className="text-[11px] text-slate-600">{profile.fingerprint.os}</span>
+        {/* Name */}
+        <td className="px-3 py-2">
+          <div className="flex items-center gap-1.5 group/name">
+            <div className="flex flex-col select-text cursor-text">
+              <span className="text-sm font-medium text-white">{profile.name}</span>
+              <span className="text-xs text-slate-500">{profile.fingerprint.os}</span>
+            </div>
+            <button
+              onClick={() => onEdit(profile)}
+              className="shrink-0 opacity-0 group-hover/name:opacity-100 flex h-5 w-5 items-center justify-center rounded hover:bg-white/10 text-slate-500 hover:text-purple-400 transition-all"
+              title="Edit"
+            >
+              <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
+              </svg>
+            </button>
           </div>
         </td>
 
-        <td className="max-w-[320px] px-4 py-4">
-          <span className="line-clamp-2 text-sm text-slate-300">
-            {profile.notes || '-'}
-          </span>
+        {/* Notes */}
+        <td className="max-w-[300px] px-3 py-2">
+          <div className="flex items-start gap-1.5 group/notes">
+            <span className="select-text cursor-text line-clamp-2 text-sm text-slate-400 flex-1">
+              {profile.notes || <span className="text-slate-600">—</span>}
+            </span>
+            {profile.notes && (
+              <button
+                onClick={() => onEdit(profile)}
+                className="shrink-0 mt-0.5 opacity-0 group-hover/notes:opacity-100 flex h-5 w-5 items-center justify-center rounded hover:bg-white/10 text-slate-500 hover:text-purple-400 transition-all"
+                title="Edit notes"
+              >
+                <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
+                </svg>
+              </button>
+            )}
+          </div>
         </td>
 
-        <td className="px-4 py-4">
+        {/* Proxy */}
+        <td className="px-3 py-2">
           {profile.proxy.type !== 'none' && profile.proxy.host ? (
-            <div className="flex flex-col">
-              <span className="font-mono text-xs text-slate-200">{profile.proxy.host}:{profile.proxy.port}</span>
-              <span className="text-[11px] uppercase text-slate-600">{profile.proxy.type}</span>
+            <div className="flex items-start gap-1.5 group/proxy">
+              <div className="flex flex-col select-text cursor-text">
+                <span className="font-mono text-xs text-slate-300">{profile.proxy.host}:{profile.proxy.port}</span>
+                <span className="text-xs uppercase text-slate-500">{profile.proxy.type}</span>
+              </div>
+              <button
+                onClick={() => onEdit(profile)}
+                className="shrink-0 mt-0.5 opacity-0 group-hover/proxy:opacity-100 flex h-5 w-5 items-center justify-center rounded hover:bg-white/10 text-slate-500 hover:text-purple-400 transition-all"
+                title="Edit proxy"
+              >
+                <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
+                </svg>
+              </button>
             </div>
           ) : (
-            <span className="text-sm text-slate-600">Không</span>
+            <span className="text-xs text-slate-500">None</span>
           )}
         </td>
 
-        <td className="px-4 py-4">
-          <span className="text-sm font-semibold text-slate-200">{daysLeft} ngày</span>
-        </td>
-
-        <td className="px-4 py-4">
+        {/* Actions */}
+        <td className="sticky right-0 z-10 bg-[#13111F] px-3 py-2 group-hover/row:bg-[#1a1825]">
           <div className="flex items-center gap-2">
+            {isRunning ? (
+              <span className="flex items-center gap-1.5 px-2 py-1 rounded-full bg-emerald-500/20 text-emerald-400 text-xs font-medium">
+                <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
+                Open
+              </span>
+            ) : (
+              <button
+                onClick={handleLaunch}
+                className="rounded-lg bg-gradient-to-r from-violet-600 to-purple-600 px-3 py-1 text-xs font-medium text-white hover:shadow-[0_0_20px_rgba(139,92,246,0.4)] transition-all"
+              >
+                Open
+              </button>
+            )}
+            {isRunning && (
+              <button
+                onClick={handleLaunch}
+                className="rounded-lg bg-red-500/10 px-3 py-1 text-xs font-medium text-red-400 hover:bg-red-500/20 transition-colors"
+              >
+                Close
+              </button>
+            )}
             <button
-              onClick={handleLaunch}
-              className={`rounded-lg px-3 py-1.5 text-xs font-bold text-white transition-all ${
-                isRunning
-                  ? 'bg-orange-500 hover:bg-orange-400'
-                  : 'bg-purple-500 hover:bg-purple-400'
-              }`}
+              ref={moreRef}
+              onClick={openMoreMenu}
+              className="flex h-6 w-6 items-center justify-center rounded-lg text-slate-500 hover:bg-white/10 hover:text-white transition-colors"
+              title="More"
             >
-              {isRunning ? 'Đóng' : 'Mở'}
-            </button>
-            <button
-              onClick={() => onEdit(profile)}
-              className="rounded-lg border border-white/10 bg-white/[0.04] px-2.5 py-1.5 text-xs font-semibold text-slate-300 hover:bg-white/[0.08]"
-            >
-              Sửa
-            </button>
-            <button
-              onClick={() => setContextMenu({ x: window.innerWidth - 220, y: 320 })}
-              className="rounded-lg px-2 py-1 text-lg leading-none text-slate-500 hover:bg-white/5 hover:text-white"
-              title="Thêm hành động"
-            >
-              ⋮
+              <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 24 24">
+                <circle cx="12" cy="5" r="1.5" /><circle cx="12" cy="12" r="1.5" /><circle cx="12" cy="19" r="1.5" />
+              </svg>
             </button>
           </div>
         </td>

@@ -13,6 +13,9 @@ function cleanEnv() {
 async function buildMainProcess() {
   const { build } = await import('vite')
 
+  // Externalize all node_modules so Node.js requires them at runtime
+  const externalAll = (id) => !id.startsWith('.') && !id.startsWith('/') && !id.startsWith('\0')
+
   await build({
     configFile: false,
     root,
@@ -30,7 +33,7 @@ async function buildMainProcess() {
         fileName: () => 'index.js'
       },
       rollupOptions: {
-        external: ['electron', 'path', 'fs', 'crypto', 'child_process', 'better-sqlite3']
+        external: externalAll
       }
     }
   })

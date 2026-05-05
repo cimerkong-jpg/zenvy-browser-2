@@ -1,331 +1,153 @@
-# 🧪 Testing Guide - Zenvy Browser
+# Testing & QA Checklist — Zenvy Browser v1.0.0
 
-## 📋 Testing Workflow (REQUIRED)
+## Automated checks (chạy trước mỗi commit)
 
-**⚠️ IMPORTANT:** Theo `.claude/rules/workflow.md`, PHẢI test trước khi commit!
-
----
-
-## ✅ Pre-Commit Checklist
-
-### 1. Build Check
 ```bash
-npm run build
-```
-**Expected:** No errors, build completes successfully
-
-### 2. Type Check
-```bash
-npm run typecheck
-```
-**Expected:** No TypeScript errors
-
-### 3. Run Tests
-```bash
-node test-antidetect.js
-```
-**Expected:** All tests pass (22/22)
-
-### 4. Manual Testing
-```bash
-npm start
-```
-**Test:**
-- ✅ App launches
-- ✅ Create profile works
-- ✅ Open profile works
-- ✅ Browser launches with test page
-- ✅ Fingerprint test shows 100/100
-- ✅ No console errors (F12)
-
----
-
-## 🔄 Automated Pre-Commit Hook
-
-**Setup:** (Already done)
-```bash
-npm install --save-dev husky
-chmod +x .husky/pre-commit
-```
-
-**What it does:**
-1. Runs `npm run build`
-2. Runs `npm run typecheck`
-3. Runs tests (if exist)
-4. Blocks commit if build/typecheck fails
-
-**To bypass (NOT recommended):**
-```bash
-git commit --no-verify -m "message"
+npm run typecheck   # TypeScript — phải pass 0 error
+npm run build       # Electron Forge package — phải build xong
 ```
 
 ---
 
-## 🧪 Test Levels
+## Manual QA — Profile Management
 
-### Level 1: Unit Tests (Future)
-```bash
-npm test
-```
-Test individual functions in isolation
+### Tạo profile
+- [ ] Mở app, vào trang Hồ sơ
+- [ ] Nhấn "Tạo hồ sơ" → modal mở
+- [ ] Điền tên, ghi chú, chọn proxy type = none
+- [ ] Lưu → profile xuất hiện trong bảng với ID đúng
+- [ ] Tạo thêm profile với proxy HTTP (host:port)
+- [ ] Tạo profile với proxy SOCKS5 có username/password
 
-### Level 2: Integration Tests
-```bash
-node test-antidetect.js
-```
-Test features working together
+### Sửa profile
+- [ ] Click icon bút chì trên tên → modal mở đúng profile
+- [ ] Sửa tên → lưu → bảng cập nhật ngay
+- [ ] Mở context menu (click ⋮ hoặc right-click) → chọn "Sửa Profile"
 
-### Level 3: E2E Tests (Future)
-```bash
-npm run test:e2e
-```
-Test complete user workflows
+### Mở / đóng browser
+- [ ] Nhấn "Mở" → Chrome mở với profile đó
+- [ ] Nút chuyển sang "Đóng" (màu cam)
+- [ ] Nhấn "Đóng" → Chrome đóng → nút trở về "Mở"
+- [ ] Mở nhiều profile cùng lúc → mỗi cái độc lập
 
-### Level 4: Manual Testing
-```bash
-npm start
-```
-Human testing on real app
+### Xóa profile
+- [ ] Xóa 1 profile qua context menu → confirm dialog → profile mất
+- [ ] Bulk select nhiều profile → nút "Xóa" trong toolbar → xóa đúng số lượng
 
----
+### Nhân bản
+- [ ] Context menu → Nhân bản → profile mới xuất hiện với tên "... Copy"
 
-## 📝 Testing New Features
+### Import / Export
+- [ ] Chọn một số profile → "Xuất" → tải về file JSON
+- [ ] Nhấn "Nhập tài nguyên" → chọn file JSON → modal preview mở
+- [ ] Preview hiển thị đúng danh sách profile
+- [ ] Profile có tên trùng với profile đã có → badge cam "Tên trùng"
+- [ ] Bỏ chọn 1 profile trong preview → nhấn Nhập → chỉ import profile đã chọn
+- [ ] Import file không hợp lệ → hiện thông báo lỗi, không crash
 
-### When adding new feature:
+### Nhóm
+- [ ] Tạo nhóm mới → xuất hiện trong panel trái
+- [ ] Sửa tên nhóm → cập nhật ngay
+- [ ] Xóa nhóm → profiles của nhóm đó về "Không có nhóm"
+- [ ] Chuyển nhóm: chọn profiles → "Chuyển nhóm" → chọn nhóm → xác nhận
 
-#### 1. Write Tests First (TDD)
-```javascript
-// test-new-feature.js
-console.log('Testing Cookie Import...')
-// Test code here
-```
-
-#### 2. Implement Feature
-```typescript
-// src/main/cookies.ts
-export function importCookies() {
-  // Implementation
-}
-```
-
-#### 3. Run Tests
-```bash
-node test-new-feature.js
-```
-
-#### 4. Manual Test
-```bash
-npm start
-# Test in UI
-```
-
-#### 5. Build Check
-```bash
-npm run build
-npm run typecheck
-```
-
-#### 6. Commit
-```bash
-git add .
-git commit -m "feat: add cookie import"
-# Pre-commit hook runs automatically
-```
+### Sort / Filter
+- [ ] Nút "Sắp xếp" → dropdown mở đúng vị trí
+- [ ] Chọn "Tên A→Z" → bảng sort lại, nút highlight tím
+- [ ] Chọn "Đang mở trước" → profiles đang chạy lên đầu
+- [ ] Chọn "Mặc định" → trở về thứ tự gốc, nút về màu trắng
+- [ ] Filter trạng thái "Đang mở" → chỉ thấy profiles đang chạy
+- [ ] Search text → filter realtime theo tên / ghi chú / proxy
 
 ---
 
-## 🎯 Test Coverage Goals
+## Manual QA — Cookies
 
-### Current (v0.0.1)
-- ✅ Antidetect features: 100%
-- ✅ Profile management: Manual only
-- ✅ Browser launch: Manual only
-
-### Target (v0.1.0)
-- ✅ All features: Automated tests
-- ✅ Code coverage: >80%
-- ✅ E2E tests: Critical paths
+- [ ] Mở context menu profile → "Quản lý Cookies" → modal mở
+- [ ] Import file cookies .txt (Netscape format) → cookies hiện trong bảng
+- [ ] Export cookies ra file → file mở được
+- [ ] Xóa 1 cookie → biến mất khỏi danh sách
+- [ ] Clear all → danh sách rỗng
 
 ---
 
-## 🐛 Bug Testing Workflow
+## Manual QA — Fingerprint
 
-### When bug reported:
-
-#### 1. Reproduce
-```bash
-npm start
-# Follow steps to reproduce
-```
-
-#### 2. Write Test
-```javascript
-// test-bug-123.js
-console.log('Testing bug #123...')
-// Test that fails with bug
-```
-
-#### 3. Fix Bug
-```typescript
-// Fix code
-```
-
-#### 4. Verify Test Passes
-```bash
-node test-bug-123.js
-```
-
-#### 5. Manual Verify
-```bash
-npm start
-# Verify bug is fixed
-```
-
-#### 6. Commit
-```bash
-git commit -m "fix: resolve bug #123"
-```
+- [ ] Tạo profile với fingerprint mặc định → Mở → không bị detect automation
+- [ ] Vào `https://browserleaks.com` hoặc `https://pixelscan.net` → kiểm tra fingerprint
+- [ ] Thay đổi canvas = noise → kết quả canvas leak khác profile khác
+- [ ] WebRTC = disabled → không leak IP thật
 
 ---
 
-## 📊 Test Reports
+## Manual QA — Automation Scripts
 
-### After testing, document:
+### Script CRUD
+- [ ] Vào trang Automation → tab Scripts
+- [ ] Tạo script mới → Monaco editor mở
+- [ ] Viết script đơn giản: `await page.goto('https://google.com')`
+- [ ] Lưu → script xuất hiện trong danh sách
+- [ ] Sửa tên / code → lưu → cập nhật đúng
+- [ ] Xóa script → biến mất
 
-```markdown
-## Test Results - [Date]
+### Chạy script
+- [ ] Chọn profile → chọn script → nhấn Chạy
+- [ ] Execution logs hiện realtime theo tab từng profile
+- [ ] Script chạy xong → status Success hoặc Error rõ ràng
+- [ ] Script timeout hoặc lỗi → hiện error log, không crash app
 
-### Build
-- ✅ Build successful
-- ⏱️ Time: 15s
+### Snippet panel
+- [ ] Click snippet → đoạn code chèn vào đúng vị trí cursor trong editor
 
-### Type Check
-- ✅ No errors
-- 📝 Files checked: 25
+### Scheduler
+- [ ] Tab "Lịch chạy" → tạo task Once hoặc Interval
+- [ ] Toggle on/off task
+- [ ] Xóa task
 
-### Automated Tests
-- ✅ 22/22 passed
-- ⏱️ Time: 2s
-
-### Manual Tests
-- ✅ App launch
-- ✅ Profile creation
-- ✅ Browser launch
-- ✅ Fingerprint test: 100/100
-- ✅ No console errors
-
-### Issues Found
-- None
-
-### Ready to Commit
-- ✅ Yes
-```
+### Lịch sử
+- [ ] Tab "Lịch sử" → thấy danh sách execution records
+- [ ] Filter Success / Error hoạt động
+- [ ] Expand record → thấy logs
+- [ ] Xóa record / xóa tất cả
 
 ---
 
-## 🚀 CI/CD Testing (Future)
+## Manual QA — UI chung
 
-### GitHub Actions
-```yaml
-# .github/workflows/test.yml
-name: Test
-on: [push, pull_request]
-jobs:
-  test:
-    runs-on: macos-latest
-    steps:
-      - uses: actions/checkout@v3
-      - uses: actions/setup-node@v3
-      - run: npm install
-      - run: npm run build
-      - run: npm run typecheck
-      - run: node test-antidetect.js
-```
+- [ ] Sidebar resize (kéo handle) → co giãn đúng
+- [ ] Group panel resize → co giãn đúng
+- [ ] Group panel thu gọn / mở lại
+- [ ] Mở app lại → dữ liệu vẫn còn (persist đúng)
+- [ ] Console (F12) không có error đỏ khi dùng bình thường
 
 ---
 
-## 📝 Testing Checklist Template
+## Build & Package
 
-Copy this for each feature:
-
-```markdown
-## Feature: [Name]
-
-### Unit Tests
-- [ ] Function A
-- [ ] Function B
-- [ ] Edge cases
-
-### Integration Tests
-- [ ] Feature works with existing code
-- [ ] No regressions
-
-### Manual Tests
-- [ ] UI works correctly
-- [ ] No console errors
-- [ ] Performance acceptable
-
-### Build Tests
-- [ ] npm run build ✅
-- [ ] npm run typecheck ✅
-- [ ] No warnings
-
-### Ready
-- [ ] All tests pass
-- [ ] Documentation updated
-- [ ] Ready to commit
-```
-
----
-
-## 🎯 Quality Standards
-
-### Before Commit
-- ✅ Build passes
-- ✅ Type check passes
-- ✅ Tests pass (if exist)
-- ✅ Manual testing done
-- ✅ No console errors
-- ✅ Performance OK
-
-### Before Push
-- ✅ All commits tested
-- ✅ Branch builds successfully
-- ✅ No merge conflicts
-
-### Before Release
-- ✅ Full test suite passes
-- ✅ Manual testing on clean install
-- ✅ DMG builds and installs
-- ✅ Documentation updated
-- ✅ Changelog updated
-
----
-
-## 🔧 Troubleshooting Tests
-
-### Build fails
 ```bash
-rm -rf node_modules out .vite
-npm install
-npm run build
+# macOS DMG
+npm run make
+
+# Kiểm tra output
+ls out/make/
 ```
 
-### Tests fail
-```bash
-# Check test file exists
-ls test-*.js
-
-# Run with verbose
-node test-antidetect.js --verbose
-```
-
-### Pre-commit hook not running
-```bash
-chmod +x .husky/pre-commit
-git config core.hooksPath .husky
-```
+- [ ] File `.dmg` tạo thành công
+- [ ] Drag vào Applications → mở được
+- [ ] App packaged load đúng (không dùng dev server)
+- [ ] Dữ liệu persist giữa các lần khởi động
 
 ---
 
-**Remember: Test early, test often, test before commit!** ✅
+## Trước khi release
+
+```bash
+npm run typecheck   # ✅ 0 error
+npm run build       # ✅ build xong
+git diff --check    # ✅ không có whitespace error
+git status          # ✅ working tree clean
+```
+
+- [ ] `package.json` version đúng (hiện tại: 1.0.0)
+- [ ] README.md phản ánh đúng tính năng
+- [ ] Không có file nhạy cảm (`.env`, key, token) trong commit

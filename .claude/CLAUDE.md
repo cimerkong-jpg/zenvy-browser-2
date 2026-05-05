@@ -2,6 +2,30 @@
 
 ## Quy tắc bắt buộc
 
+### UI / Design System (CRITICAL)
+
+Tất cả UI phải tuân thủ tuyệt đối design system tại:
+`.claude/rules/design.md`
+
+Nguyên tắc bắt buộc:
+
+- Luôn sử dụng đúng color system đã định nghĩa
+- Không tự ý tạo màu mới
+- Không dùng spacing ngoài hệ thống
+- Không tạo component style mới nếu chưa có trong design.md
+- Luôn giữ layout compact, ưu tiên hiệu suất thao tác
+- Không biến UI thành landing page / marketing style
+
+Khi viết hoặc refactor UI:
+- Phải đọc design.md trước
+- Phải áp dụng typography, spacing, component rules
+- Ưu tiên consistency hơn sáng tạo
+
+Nếu có xung đột giữa:
+- "UI đẹp" và "design.md"
+
+→ LUÔN chọn design.md
+
 ### Ngôn ngữ
 Luôn trả lời bằng tiếng Việt, trừ khi user yêu cầu rõ ràng một ngôn ngữ khác.
 
@@ -69,10 +93,6 @@ Agents nằm trong `.claude/agents/` và được dùng theo loại task:
 Xem thêm: `.claude/AGENT_USAGE.md`.
 
 ## Trạng thái hiện tại
-- Environment đã setup.
-- Dependencies đã repair bằng `npm install`.
-- `npm run typecheck` pass.
-- `npm run build` pass.
-- Week 1-4 feature set đã được triển khai phần lớn.
-- Phase 1 Enhanced UI/UX đã hoàn thành ở mức foundation/useful features.
-- Automation Scripts chưa triển khai.
+- Level 2 hoàn thành: Automation Scripts cơ bản, Tag Manager, Toast/Dialog, multi-page navigation.
+- `npm run typecheck` pass. `npm run build` pass.
+- Next: Advanced Automation (Level 2+) — checklist đã duyệt 2026-05-04, sẵn sàng triển khai.

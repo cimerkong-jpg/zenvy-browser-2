@@ -73,8 +73,8 @@ export default function TemplateManager({ onClose }: Props) {
   )
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm">
-      <div className="glass rounded-2xl w-full max-w-3xl max-h-[80vh] flex flex-col overflow-hidden">
+    <div className="fixed inset-0 z-[9999] flex items-center justify-center bg-black/60 backdrop-blur-sm">
+      <div className="glass rounded-2xl w-full max-w-3xl max-h-[80vh] flex flex-col overflow-hidden shadow-2xl">
         {/* Header */}
         <div className="flex items-center justify-between px-6 py-4 border-b border-white/5">
           <h2 className="text-xl font-bold">Template Manager</h2>

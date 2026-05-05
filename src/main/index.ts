@@ -5,6 +5,14 @@ import * as db from './db'
 import * as browser from './browser'
 import * as cookies from './cookies'
 import * as templates from './templates'
+import * as scripts from './automation/scripts'
+import * as executor from './automation/executor'
+import * as history from './automation/history'
+import * as scheduler from './automation/scheduler'
+import * as appSettings from './appSettings'
+import * as userSettings from './userSettings'
+import * as extensions from './extensions'
+import * as auth from './auth'
 import type { Profile } from '../shared/types'
 import type { Cookie } from './cookies'
 
@@ -52,9 +60,11 @@ function createWindow(): void {
   })
 
   win.webContents.on('console-message', (_event, level, message, line, sourceId) => {
-    if (level >= 3) {
-      console.error('Renderer console:', { level, message, line, sourceId })
-    }
+    try {
+      if (level >= 3) {
+        console.error('Renderer console:', { level, message, line, sourceId })
+      }
+    } catch { /* ignore EPIPE in dev mode */ }
   })
 
   win.webContents.setWindowOpenHandler(({ url }) => {
@@ -122,11 +132,6 @@ app.whenReady().then(() => {
   ipcMain.handle('profiles:duplicate', (_, id: string) => db.duplicateProfile(id))
   ipcMain.handle('profiles:export', (_, ids: string[]) => db.exportProfiles(ids))
   ipcMain.handle('profiles:import', (_, jsonData: string) => db.importProfiles(jsonData))
-
-  // ── Tag handlers ─────────────────────────────────────────────────────────
-  ipcMain.handle('tags:getAll', () => db.getTags())
-  ipcMain.handle('tags:create', (_, name: string, color: string) => db.createTag(name, color))
-  ipcMain.handle('tags:delete', (_, id: string) => db.deleteTag(id))
 
   // ── Browser handlers ─────────────────────────────────────────────────────
   ipcMain.handle('browser:launch', (_, profile: Profile) => browser.launchProfile(profile))
@@ -200,6 +205,50 @@ app.whenReady().then(() => {
     return template
   })
 
+  // ── Automation handlers ──────────────────────────────────────────────────
+  ipcMain.handle('scripts:getAll', () => scripts.getScripts())
+  ipcMain.handle('scripts:get', (_, id: string) => scripts.getScript(id))
+  ipcMain.handle('scripts:create', (_, data: { name: string; description: string; code: string }) =>
+    scripts.createScript(data)
+  )
+  ipcMain.handle('scripts:update', (_, id: string, data: { name?: string; description?: string; code?: string }) =>
+    scripts.updateScript(id, data)
+  )
+  ipcMain.handle('scripts:delete', (_, id: string) => scripts.deleteScript(id))
+  ipcMain.handle('scripts:run', async (_, scriptId: string, profile: Profile) => {
+    const script = scripts.getScript(scriptId)
+    if (!script) return { success: false, error: 'Script không tồn tại' }
+    try {
+      const result = await executor.runScript(script, profile)
+      return { success: true, data: result }
+    } catch (err) {
+      return { success: false, error: String(err) }
+    }
+  })
+
+  // ── History handlers ─────────────────────────────────────────────────────
+  ipcMain.handle('history:getAll', () => history.getHistory())
+  ipcMain.handle('history:delete', (_, id: string) => history.deleteHistoryRecord(id))
+  ipcMain.handle('history:clear', () => history.clearHistory())
+
+  // ── Scheduler handlers ───────────────────────────────────────────────────
+  ipcMain.handle('scheduler:getAll', () => scheduler.getScheduledTasks())
+  ipcMain.handle('scheduler:create', (_, data: Parameters<typeof scheduler.createScheduledTask>[0]) =>
+    scheduler.createScheduledTask(data)
+  )
+  ipcMain.handle('scheduler:update', (_, id: string, data: Parameters<typeof scheduler.updateScheduledTask>[1]) =>
+    scheduler.updateScheduledTask(id, data)
+  )
+  ipcMain.handle('scheduler:toggle', (_, id: string, enabled: boolean) =>
+    scheduler.toggleScheduledTask(id, enabled)
+  )
+  ipcMain.handle('scheduler:delete', (_, id: string) => scheduler.deleteScheduledTask(id))
+
+  // ── Profile variable handlers ────────────────────────────────────────────
+  ipcMain.handle('profiles:setVariables', async (_, profileId: string, variables: Record<string, string>) => {
+    return db.updateProfile(profileId, { variables })
+  })
+
   // ── App handlers ─────────────────────────────────────────────────────────
   ipcMain.handle('app:reload', () => {
     const windows = BrowserWindow.getAllWindows()
@@ -207,6 +256,85 @@ app.whenReady().then(() => {
       windows[0].reload()
     }
   })
+
+  // ── Settings handlers ────────────────────────────────────────────────────
+  ipcMain.handle('settings:get', () => appSettings.getSettings())
+  ipcMain.handle('settings:update', (_, data: any) => appSettings.updateSettings(data))
+  ipcMain.handle('settings:getChromePath', () => appSettings.detectChromePath())
+  ipcMain.handle('settings:openDataDir', () => appSettings.openDataDir())
+  ipcMain.handle('settings:getDataDir', () => appSettings.getDataDir())
+  ipcMain.handle('settings:backup', () => appSettings.backup())
+  ipcMain.handle('settings:restore', (_, data: any) => appSettings.restore(data))
+  ipcMain.handle('settings:browseChrome', async () => {
+    const result = await dialog.showOpenDialog({
+      title: 'Chọn Chrome Executable',
+      properties: ['openFile'],
+      filters: [
+        { name: 'Executable', extensions: process.platform === 'win32' ? ['exe'] : ['app'] }
+      ]
+    })
+    if (result.canceled || !result.filePaths[0]) return null
+    return result.filePaths[0]
+  })
+
+  // ── User handlers ────────────────────────────────────────────────────────
+  ipcMain.handle('user:get', () => userSettings.getUser())
+  ipcMain.handle('user:update', (_, data: any) => userSettings.updateUser(data))
+  ipcMain.handle('user:getStats', async () => {
+    const profiles = await db.getProfiles()
+    const allScripts = await scripts.getScripts()
+    const historyRecords = await history.getHistory()
+    const tasks = await scheduler.getScheduledTasks()
+    return {
+      profileCount: profiles.length,
+      scriptCount: allScripts.length,
+      historyCount: historyRecords.length,
+      activeSchedulerCount: tasks.filter(t => t.enabled).length,
+      totalRuns: historyRecords.length
+    }
+  })
+
+  // ── Extension handlers ───────────────────────────────────────────────────
+  ipcMain.handle('extensions:getAll', (_, profileId: string) => extensions.getExtensions(profileId))
+  ipcMain.handle('extensions:toggle', (_, profileId: string, extId: string, enabled: boolean) =>
+    extensions.toggleExtension(profileId, extId, enabled)
+  )
+  ipcMain.handle('extensions:copyTo', (_, fromProfileId: string, toProfileIds: string[], extIds: string[]) =>
+    extensions.copyExtensions(fromProfileId, toProfileIds, extIds)
+  )
+
+  // ── Browser navigation handler ───────────────────────────────────────────
+  ipcMain.handle('browser:navigateTo', async (_, profileId: string, url: string) => {
+    // This will be handled by the executor when we have access to the page
+    return { success: false, error: 'Not implemented yet - requires active browser connection' }
+  })
+
+  // ── Auth handlers ─────────────────────────────────────────────────────────
+  ipcMain.handle('auth:signUp', async (_, email: string, password: string) => {
+    return await auth.signUp(email, password)
+  })
+
+  ipcMain.handle('auth:signIn', async (_, email: string, password: string) => {
+    return await auth.signIn(email, password)
+  })
+
+  ipcMain.handle('auth:signOut', async () => {
+    return await auth.signOut()
+  })
+
+  ipcMain.handle('auth:getCurrentUser', async () => {
+    return await auth.getCurrentUser()
+  })
+
+  ipcMain.handle('auth:getCurrentSession', async () => {
+    return await auth.getCurrentSession()
+  })
+
+  ipcMain.handle('auth:isAuthenticated', async () => {
+    return await auth.isAuthenticated()
+  })
+
+  scheduler.startScheduler(() => db.getProfiles())
 
   createWindow()
 

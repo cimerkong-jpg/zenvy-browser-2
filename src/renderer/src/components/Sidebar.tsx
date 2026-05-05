@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import { useTheme, type Theme } from '../store/useTheme'
-import TemplateManager from './TemplateManager'
-import appIcon from '../assets/brand/faticon-logo.png'
+import { useAuth } from '../store/useAuth'
+import type { Page, AutoSub } from '../App'
 import zenvyLogoDark from '../assets/brand/logo-cropped.png'
 import zenvyLogoLight from '../assets/brand/logo-cropped-light.png'
 
@@ -11,142 +11,272 @@ const themeMeta: Record<Theme, { label: string; icon: string }> = {
   auto: { label: 'Auto', icon: '◐' }
 }
 
-export default function Sidebar() {
+const AUTO_SUB_ITEMS: { key: AutoSub; label: string }[] = [
+  { key: 'scripts', label: 'Quy Trình' },
+  { key: 'scheduler', label: 'Lập Lịch' },
+  { key: 'history', label: 'Lịch Sử' },
+]
+
+interface SidebarProps {
+  activePage: Page
+  onNavigate: (page: Page) => void
+  autoSub: AutoSub
+  onAutoSubChange: (sub: AutoSub) => void
+  onOpenTemplateManager: () => void
+}
+
+export default function Sidebar({ activePage, onNavigate, autoSub, onAutoSubChange, onOpenTemplateManager }: SidebarProps) {
   const { theme, setTheme, resolvedTheme } = useTheme()
-  const [showTemplateManager, setShowTemplateManager] = useState(false)
+  const { user, signOut } = useAuth()
   const [showThemePicker, setShowThemePicker] = useState(false)
+
+  const handleLogout = async () => {
+    try {
+      await signOut()
+    } catch (err) {
+      console.error('Logout failed:', err)
+    }
+  }
 
   const selectTheme = (nextTheme: Theme) => {
     setTheme(nextTheme)
     setShowThemePicker(false)
   }
 
-  // Chọn logo dựa trên theme hiện tại
   const currentLogo = resolvedTheme === 'light' ? zenvyLogoLight : zenvyLogoDark
 
   return (
-    <>
-      <aside className="app-sidebar w-60 flex-shrink-0 flex flex-col border-r border-purple-500/10 bg-[#0D0B1A]/95">
-        <div className="drag-region h-3 flex-shrink-0" />
+    <aside className="w-full h-full flex flex-col bg-[#0B0B0F] border-r border-[#1F2230]">
+      {/* Drag region */}
+      <div className="drag-region h-3 flex-shrink-0" />
 
-        <div className="no-drag min-h-0 flex-1 overflow-y-auto overflow-x-hidden px-3 pb-4">
-          <div className="brand-logo-shell mb-5 inline-flex w-fit max-w-full px-1 py-1">
-            <img
-              src={currentLogo}
-              alt="Zenvy"
-              className="h-12 w-auto max-w-full object-contain"
-            />
-          </div>
-
-          <nav className="space-y-1">
-            <NavItem icon="▣" label="Hồ sơ" active />
-            <NavItem icon="⇅" label="Automation" />
-            <NavItem icon="↻" label="Đồng bộ thao tác" />
-            <NavItem icon="▦" label="Extension" />
-            <NavItem icon="○" label="Thành viên" />
-            <NavItem icon="⚙" label="Cài đặt" />
-
-            <div className="pt-5">
-              <p className="px-3 pb-2 text-[10px] font-semibold uppercase tracking-[0.18em] text-slate-600">
-                Templates
-              </p>
-              <button
-                onClick={() => setShowTemplateManager(true)}
-                className="w-full flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm text-slate-400 hover:bg-white/5 hover:text-white transition-all focus:outline-none focus:ring-2 focus:ring-purple-400/50"
-              >
-                <span className="w-5 text-center text-base">▤</span>
-                Quản lý Templates
-              </button>
-            </div>
-          </nav>
-
-          <div className="mt-8 space-y-3">
-            <div className="rounded-xl border border-purple-500/10 bg-white/[0.03] p-4 space-y-3">
-              <Metric label="Số dư chính" value="0 VND" />
-              <Metric label="Gói đang dùng" value="Personal" />
-              <Metric label="Hồ sơ hiện có" value="Local" />
-            </div>
-
-            <div className="space-y-2">
-              <p className="px-1 text-[10px] font-semibold uppercase tracking-[0.18em] text-slate-600">
-                Giao diện
-              </p>
-              <div className="space-y-2">
-                <button
-                  onClick={() => setShowThemePicker((open) => !open)}
-                  className="flex h-10 w-full items-center gap-2 rounded-xl border border-purple-500/15 bg-white/[0.045] px-3 text-xs font-semibold text-slate-300 transition-all hover:bg-white/[0.08] hover:text-white focus:outline-none focus:ring-2 focus:ring-purple-400/50"
-                  title="Mở chọn Light / Dark / Auto"
-                  aria-expanded={showThemePicker}
-                >
-                  <span className="text-base">{themeMeta[theme].icon}</span>
-                  <span>{themeMeta[theme].label}</span>
-                  <span className="ml-auto text-[10px] text-slate-500">{showThemePicker ? '▲' : '▼'}</span>
-                </button>
-
-                {showThemePicker && (
-                  <div className="grid grid-cols-3 gap-1 rounded-xl border border-purple-500/10 bg-white/[0.035] p-1">
-                    {(['light', 'dark', 'auto'] as Theme[]).map((item) => (
-                      <button
-                        key={item}
-                        onClick={() => selectTheme(item)}
-                        className={`flex h-8 items-center justify-center rounded-lg text-xs font-bold transition-all focus:outline-none focus:ring-2 focus:ring-purple-400/50 ${
-                          theme === item
-                            ? 'bg-purple-500/25 text-white shadow-[0_0_18px_rgba(124,58,237,0.22)]'
-                            : 'text-slate-500 hover:bg-white/5 hover:text-white'
-                        }`}
-                        title={item === 'auto' ? 'Auto: 06:00-18:00 Light, 18:00-06:00 Dark' : themeMeta[item].label}
-                      >
-                        {themeMeta[item].icon}
-                      </button>
-                    ))}
-                  </div>
-                )}
-              </div>
-              <p className="px-1 text-[11px] text-slate-500">
-                Auto: 06:00-18:00 Light, 18:00-06:00 Dark. Hiện tại đang dùng {resolvedTheme === 'dark' ? 'Dark' : 'Light'}.
-              </p>
-            </div>
-
-            <div className="flex items-center gap-2 px-2 py-1.5">
-              <img src={appIcon} alt="" className="h-7 w-7 rounded-md object-contain" />
-              <div>
-                <p className="text-xs font-medium text-white">Zenvy</p>
-                <p className="text-[10px] text-slate-500">Personal</p>
-              </div>
-            </div>
-          </div>
+      {/* Scrollable content */}
+      <div className="no-drag min-h-0 flex-1 overflow-y-auto overflow-x-hidden px-3 pb-4">
+        {/* Logo */}
+        <div className="mb-6 px-2 py-2">
+          <img
+            src={currentLogo}
+            alt="Zenvy"
+            className="h-10 w-auto object-contain"
+          />
         </div>
-      </aside>
 
-      {showTemplateManager && (
-        <TemplateManager onClose={() => setShowTemplateManager(false)} />
-      )}
-    </>
+        {/* Navigation */}
+        <nav className="space-y-1 mb-8">
+          <NavItem 
+            icon="▣" 
+            label="Hồ sơ" 
+            active={activePage === 'profiles'} 
+            onClick={() => onNavigate('profiles')} 
+          />
+          
+          <NavItem 
+            icon="⇅" 
+            label="Automation" 
+            active={activePage === 'automation'} 
+            onClick={() => {
+              if (activePage === 'automation') {
+                onNavigate('profiles')
+              } else {
+                onNavigate('automation')
+              }
+            }} 
+            chevron 
+            chevronOpen={activePage === 'automation'} 
+          />
+          
+          {activePage === 'automation' && (
+            <div className="ml-6 mt-1 space-y-0.5">
+              {AUTO_SUB_ITEMS.map((item) => (
+                <SubNavItem
+                  key={item.key}
+                  label={item.label}
+                  active={autoSub === item.key}
+                  onClick={() => onAutoSubChange(item.key)}
+                />
+              ))}
+            </div>
+          )}
+          
+          <NavItem 
+            icon="↻" 
+            label="Đồng bộ thao tác" 
+            active={activePage === 'sync'} 
+            onClick={() => onNavigate('sync')} 
+          />
+          
+          <NavItem 
+            icon="▦" 
+            label="Extension" 
+            active={activePage === 'extensions'} 
+            onClick={() => onNavigate('extensions')} 
+          />
+          
+          <NavItem 
+            icon="○" 
+            label="Thành viên" 
+            active={activePage === 'members'} 
+            onClick={() => onNavigate('members')} 
+          />
+          
+          <NavItem 
+            icon="⚙" 
+            label="Cài đặt" 
+            active={activePage === 'settings'} 
+            onClick={() => onNavigate('settings')} 
+          />
+        </nav>
+
+        {/* Tools Section */}
+        <div className="mb-8">
+          <p className="px-2 mb-2 text-[11px] font-semibold uppercase tracking-wider text-[#6B7280]">
+            Công cụ
+          </p>
+          <button
+            onClick={onOpenTemplateManager}
+            className="w-full flex items-center gap-3 rounded-lg px-2 py-2 text-[13px] text-[#9CA3AF] hover:bg-white/5 hover:text-[#E5E7EB] transition-all"
+          >
+            <span className="w-5 text-center">▤</span>
+            <span>Quản lý Templates</span>
+          </button>
+        </div>
+
+        {/* Account Section */}
+        {user && (
+          <div className="mb-4 rounded-lg bg-[#111218] border border-[#1F2230] p-3">
+            <div className="mb-3">
+              <p className="text-[11px] text-[#6B7280] mb-1">Tài khoản</p>
+              <p className="text-[13px] font-medium text-[#E5E7EB] truncate" title={user.email}>
+                {user.email}
+              </p>
+            </div>
+            
+            <div className="space-y-2 mb-3">
+              <div className="flex justify-between items-center">
+                <span className="text-[11px] text-[#6B7280]">Gói</span>
+                <span className="text-[12px] text-[#E5E7EB]">Personal</span>
+              </div>
+              <div className="flex justify-between items-center">
+                <span className="text-[11px] text-[#6B7280]">Hồ sơ</span>
+                <span className="text-[12px] text-[#E5E7EB]">Local</span>
+              </div>
+            </div>
+            
+            <button
+              onClick={handleLogout}
+              className="w-full rounded-md bg-[#1F2230] px-3 py-1.5 text-[12px] font-medium text-[#9CA3AF] hover:bg-[#2A2D3A] hover:text-[#E5E7EB] transition-all"
+            >
+              Đăng xuất
+            </button>
+          </div>
+        )}
+
+        {/* Theme Switcher */}
+        <div className="mb-4">
+          <button
+            onClick={() => setShowThemePicker(!showThemePicker)}
+            className="w-full flex items-center justify-between rounded-lg bg-[#111218] border border-[#1F2230] px-3 py-2 text-[12px] text-[#9CA3AF] hover:bg-[#1A1D24] transition-all"
+          >
+            <div className="flex items-center gap-2">
+              <span>{themeMeta[theme].icon}</span>
+              <span>{themeMeta[theme].label}</span>
+            </div>
+            <span className="text-[10px]">{showThemePicker ? '▲' : '▼'}</span>
+          </button>
+
+          {showThemePicker && (
+            <div className="mt-2 grid grid-cols-3 gap-1 rounded-lg bg-[#111218] border border-[#1F2230] p-1">
+              {(['light', 'dark', 'auto'] as Theme[]).map((item) => (
+                <button
+                  key={item}
+                  onClick={() => selectTheme(item)}
+                  className={`flex h-8 items-center justify-center rounded-md text-[11px] font-medium transition-all ${
+                    theme === item
+                      ? 'bg-[#7C3AED] text-white'
+                      : 'text-[#6B7280] hover:bg-[#1F2230] hover:text-[#9CA3AF]'
+                  }`}
+                >
+                  {themeMeta[item].icon}
+                </button>
+              ))}
+            </div>
+          )}
+        </div>
+
+        {/* App Info */}
+        <div className="px-2 py-2 text-center">
+          <p className="text-[11px] text-[#6B7280]">Zenvy Browser</p>
+          <p className="text-[10px] text-[#4B5563]">v1.0.0</p>
+        </div>
+      </div>
+    </aside>
   )
 }
 
-function NavItem({ icon, label, active = false }: { icon: string; label: string; active?: boolean }) {
+function NavItem({ 
+  icon, 
+  label, 
+  active = false, 
+  onClick, 
+  chevron, 
+  chevronOpen 
+}: { 
+  icon: string
+  label: string
+  active?: boolean
+  onClick?: () => void
+  chevron?: boolean
+  chevronOpen?: boolean
+}) {
   return (
     <button
-      className={`w-full flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium transition-all focus:outline-none focus:ring-2 focus:ring-purple-400/50 ${
+      onClick={onClick}
+      className={`w-full flex items-center gap-3 rounded-lg px-2 py-2 text-[13px] font-medium transition-all ${
         active
-          ? 'bg-purple-500/15 text-white shadow-[inset_3px_0_0_rgba(249,115,22,0.9)]'
-          : 'text-slate-400 hover:bg-white/5 hover:text-white'
+          ? 'bg-white/10 text-[#E5E7EB]'
+          : 'text-[#9CA3AF] hover:bg-white/5 hover:text-[#E5E7EB]'
       }`}
     >
-      <span className={`w-5 text-center text-base ${active ? 'text-orange-300' : 'text-slate-500'}`}>
+      <span className={`w-5 text-center ${active ? 'text-[#7C3AED]' : 'text-[#6B7280]'}`}>
         {icon}
       </span>
-      {label}
+      <span className="flex-1 text-left">{label}</span>
+      {chevron && (
+        <svg
+          className={`w-3 h-3 transition-transform ${chevronOpen ? 'rotate-180' : ''} ${
+            active ? 'text-[#7C3AED]' : 'text-[#6B7280]'
+          }`}
+          fill="none"
+          viewBox="0 0 24 24"
+          stroke="currentColor"
+        >
+          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+        </svg>
+      )}
     </button>
   )
 }
 
-function Metric({ label, value }: { label: string; value: string }) {
+function SubNavItem({ 
+  label, 
+  active, 
+  onClick 
+}: { 
+  label: string
+  active: boolean
+  onClick: () => void
+}) {
   return (
-    <div>
-      <p className="text-[11px] text-slate-500">{label}</p>
-      <p className="text-sm font-semibold text-white">{value}</p>
-    </div>
+    <button
+      onClick={onClick}
+      className={`w-full flex items-center gap-2 rounded-md px-2 py-1.5 text-[12px] transition-all ${
+        active 
+          ? 'bg-white/5 text-[#E5E7EB] font-medium' 
+          : 'text-[#6B7280] hover:bg-white/5 hover:text-[#9CA3AF]'
+      }`}
+    >
+      <span className={`w-1 h-1 rounded-full ${active ? 'bg-[#7C3AED]' : 'bg-[#4B5563]'}`} />
+      {label}
+    </button>
   )
 }

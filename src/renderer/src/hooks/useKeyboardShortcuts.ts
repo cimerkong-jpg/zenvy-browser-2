@@ -9,6 +9,8 @@ interface ShortcutHandlers {
   onSearch?: () => void
   onSelectAll?: () => void
   onEscape?: () => void
+  onSave?: () => void
+  onRun?: () => void
 }
 
 export function useKeyboardShortcuts(handlers: ShortcutHandlers) {
@@ -63,6 +65,18 @@ export function useKeyboardShortcuts(handlers: ShortcutHandlers) {
       if (e.key === 'Escape' && handlers.onEscape) {
         handlers.onEscape()
       }
+
+      // Cmd/Ctrl + S - Save
+      if (modifier && e.key === 's' && handlers.onSave) {
+        e.preventDefault()
+        handlers.onSave()
+      }
+
+      // Cmd/Ctrl + Enter - Run
+      if (modifier && e.key === 'Enter' && handlers.onRun) {
+        e.preventDefault()
+        handlers.onRun()
+      }
     }
 
     window.addEventListener('keydown', handleKeyDown)
@@ -78,5 +92,7 @@ export const SHORTCUTS = {
   DELETE: 'Cmd/Ctrl + Del',
   SEARCH: 'Cmd/Ctrl + F',
   SELECT_ALL: 'Cmd/Ctrl + A',
-  ESCAPE: 'Esc'
+  ESCAPE: 'Esc',
+  SAVE: 'Cmd/Ctrl + S',
+  RUN: 'Cmd/Ctrl + Enter'
 }

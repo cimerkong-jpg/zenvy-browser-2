@@ -4,75 +4,84 @@
 
 ### Profile Management
 - CRUD profiles.
-- Profile IDs are sequential numeric strings starting at `1001`.
+- Profile IDs là số tuần tự bắt đầu từ 1001.
 - Group assignment.
 - Multi-select profiles.
 - Bulk move selected profiles to another group.
 - Bulk delete.
 - Duplicate profile.
-- Search by name/notes.
-- Import/export selected profiles as JSON.
+- Search theo tên / ghi chú / proxy.
+- Import profiles từ JSON với ImportPreviewModal: hiển thị danh sách, badge tên trùng, chọn lọc trước khi nhập.
+- Export selected profiles as JSON.
 - Profile stats dashboard.
-- Tags backend and basic `TagInput` UI.
+- Sort profiles: Tên A→Z / Z→A, Ngày tạo mới nhất / cũ nhất, Đang mở trước — dropdown active state.
 
 ### Browser Isolation
-- Launch Chrome with per-profile `user-data-dir`.
+- Launch Chrome với per-profile `user-data-dir`.
 - Track running profile IDs.
 - Close launched profile browser process.
-- Proxy config per profile through Chrome launch args.
+- Proxy config per profile qua Chrome launch args.
 
 ### Cookie Management
 - Cookie CRUD by profile.
-- Import/export cookies.
-- Sync cookies between browser and local storage.
+- Import/export cookies (Netscape .txt).
+- Sync cookies giữa browser và local storage.
 - `CookieManager` UI.
 
 ### Profile Templates
-- Built-in templates for common sites.
-- Save current config as custom template.
+- Built-in templates cho các site phổ biến.
+- Lưu config hiện tại thành custom template.
 - Template management UI.
 - Import/export templates.
 
 ### Fingerprint Spoofing
-- Base fingerprint fields: user agent, timezone, language, hardware, device name, MAC address.
+- Base fingerprint: user agent, timezone, language, hardware, device name, MAC address.
 - WebRTC blocking.
 - Canvas/WebGL mode config.
-- Advanced spoof scripts:
-  - fonts.
-  - audio context.
-  - screen resolution.
-  - geolocation.
-  - battery status.
-- Fingerprint script injection from `src/main/browser.ts`.
+- Advanced spoof scripts: fonts, audio context, screen resolution, geolocation, battery status.
+- Fingerprint script injection từ `src/main/browser.ts`.
 
 ### Enhanced UI/UX
 - Keyboard shortcuts hook.
-- Theme store with dark/light/auto mode; auto uses desktop time: 06:00-18:00 light, 18:00-06:00 dark.
-- Context menu on profile rows.
-- Drag-and-drop foundation for profile rows.
-- Sidebar theme toggle cycles Light / Dark / Auto.
-
-## Đang hoàn thiện
-- Drag-and-drop mới có foundation, chưa hoàn chỉnh drop zones cho groups/sidebar.
-- Tags UI mới ở mức chọn/tạo tag trong profile modal, chưa có Tag Manager đầy đủ.
-- Import/export profiles hiện dùng file picker/download trực tiếp, chưa có preview/conflict resolution modal.
-- Documentation đang được đồng bộ lại để khớp code hiện tại.
-
-## Chưa triển khai
+- Theme store: dark/light/auto (auto dùng giờ desktop: 06:00-18:00 light, 18:00-06:00 dark).
+- Context menu trên profile rows.
+- Sidebar + Group panel đều resize được.
+- Group panel collapse / expand.
 
 ### Automation Scripts
-- Script types/storage.
-- Script CRUD backend.
-- Script executor.
-- Scheduler.
-- IPC handlers for scripts.
-- Automation page.
-- Monaco script editor.
-- Script library.
-- Execution logs.
-- Multi-profile script execution.
+- Script data model + shared types.
+- Script CRUD storage (zenvy-scripts.json).
+- Execution engine (AsyncFunction + Puppeteer).
+- RPA Helper API: click, type, goto, waitForSelector, scroll, hover, select, screenshot, getAttribute, getText, exists, waitForNavigation, keyboard.press/type, evaluate, vars.
+- Multi-profile sequential execution.
+- Execution logs streamed real-time qua IPC.
+- ExecutionLogs tab per profile.
+- Action Snippet Panel — 6 nhóm snippet, chèn đúng vị trí cursor Monaco.
+- Script Library — 5 built-in templates.
+- Scheduler: once / interval, toggle on/off, persist zenvy-scheduler.json.
+- Task History: max 500 records, filter success/error, expand logs, xóa record, persist zenvy-history.json.
+- Profile Variables: Record&lt;string, string&gt;, runtime override, `vars.key` trong script, nút "Lưu vào profile".
+- AutomationQuickModal trong ProfilesPage: chạy script nhanh từ selected profiles.
 
-## Không coi là hoàn thành nếu thiếu
+## Đã xóa
+- **Tags**: toàn bộ Tag code (TagInput, TagManager, getTags/createTag/deleteTag, Tag type, tags trong StoreSchema) đã xóa 2026-05-05.
+- **Drag-and-drop**: useDragAndDrop hook và drag props trên ProfileRow đã xóa 2026-05-05.
+
+## Chưa triển khai (optional / future)
+
+### Import Enhancement
+- Overwrite mode (ghi đè profile cùng tên thay vì nhập thêm).
+- Conflict resolution per-profile (Skip / Overwrite / Rename).
+
+### Automation Enhancement
+- Parallel multi-profile execution (hiện tại sequential).
+- Script version history.
+
+### Infrastructure
+- E2E automated tests.
+- CI/CD pipeline.
+
+## Định nghĩa "hoàn thành"
 - `npm run typecheck` pass.
 - `npm run build` pass.
-- Documentation trong `CLAUDE.md` và `.claude/rules/` được cập nhật đúng mức chi tiết.
+- Docs trong `CLAUDE.md` và `.claude/rules/` được cập nhật.

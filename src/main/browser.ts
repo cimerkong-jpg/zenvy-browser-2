@@ -4,8 +4,12 @@ import { spawn, ChildProcess, exec } from 'child_process'
 import { readFileSync, writeFileSync, existsSync } from 'fs'
 import type { Profile } from '../shared/types'
 import { getFontsByOS } from './fingerprints/fonts'
+import { getSettings } from './appSettings'
 
 const runningProfiles = new Map<string, { process: ChildProcess; pid?: number }>()
+
+// Track profiles opened by Puppeteer automation — stores Browser instance to allow closing
+const automationProfiles = new Map<string, { close: () => Promise<void> }>()
 
 // Helper to promisify exec
 function execAsync(command: string): Promise<{ stdout: string; stderr: string }> {
@@ -26,14 +30,7 @@ function notifyProfileStatusChange(profileId: string, isRunning: boolean) {
 }
 
 function getChromePath(): string {
-  switch (process.platform) {
-    case 'darwin':
-      return '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome'
-    case 'win32':
-      return 'C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe'
-    default:
-      return '/usr/bin/google-chrome'
-  }
+  return getSettings().chromePath
 }
 
 function injectSpoofScripts(profile: Profile, testPagePath: string): string {
@@ -161,8 +158,22 @@ function buildChromeArgs(profile: Profile, userDataDir: string, testPagePath: st
   return args
 }
 
+// Called by executor.ts when Puppeteer opens a browser for automation
+export function registerAutomationProfile(profileId: string, browser: { close: () => Promise<void> }): void {
+  automationProfiles.set(profileId, browser)
+  notifyProfileStatusChange(profileId, true)
+}
+
+// Called when Puppeteer browser disconnects / closes
+export function unregisterAutomationProfile(profileId: string): void {
+  automationProfiles.delete(profileId)
+  if (!runningProfiles.has(profileId)) {
+    notifyProfileStatusChange(profileId, false)
+  }
+}
+
 export function launchProfile(profile: Profile): { success: boolean; error?: string } {
-  if (runningProfiles.has(profile.id)) {
+  if (runningProfiles.has(profile.id) || automationProfiles.has(profile.id)) {
     return { success: false, error: 'Profile đang mở' }
   }
 
@@ -227,16 +238,30 @@ export function launchProfile(profile: Profile): { success: boolean; error?: str
 }
 
 export function closeProfile(profileId: string): void {
+  let closed = false
+  
   const entry = runningProfiles.get(profileId)
   if (entry) {
     entry.process.kill()
     runningProfiles.delete(profileId)
+    closed = true
+  }
+
+  const automationBrowser = automationProfiles.get(profileId)
+  if (automationBrowser) {
+    automationBrowser.close().catch(() => {})
+    automationProfiles.delete(profileId)
+    closed = true
+  }
+  
+  // Always notify status change if we closed something
+  if (closed) {
     notifyProfileStatusChange(profileId, false)
   }
 }
 
 export function getRunningProfiles(): string[] {
-  return Array.from(runningProfiles.keys())
+  return [...new Set([...runningProfiles.keys(), ...automationProfiles.keys()])]
 }
 
 // Check if a Chrome process with specific user-data-dir is actually running

@@ -458,3 +458,6 @@ Trước khi implement design:
 - [ ] Developer handoff ready?
 - [ ] Success metrics defined?
 - [ ] Usability testing planned?
+
+Always follow .claude/rules/design.md strictly.
+Never invent new UI styles.

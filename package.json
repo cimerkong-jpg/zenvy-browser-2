@@ -1,6 +1,6 @@
 {
   "name": "zenvy-browser",
-  "version": "0.0.1",
+  "version": "1.0.0",
   "description": "Antidetect browser for managing multiple accounts",
   "author": "Zenvy",
   "main": ".vite/build/index.js",
@@ -15,10 +15,17 @@
     "prepare": "husky install"
   },
   "dependencies": {
+    "@monaco-editor/react": "^4.7.0",
     "@puppeteer/browsers": "^2.13.0",
+    "@supabase/supabase-js": "^2.105.3",
+    "@types/better-sqlite3": "^7.6.13",
+    "@types/ws": "^8.18.1",
+    "better-sqlite3": "^12.9.0",
+    "dotenv": "^17.4.2",
     "puppeteer": "^24.42.0",
     "puppeteer-extra": "^3.3.6",
     "puppeteer-extra-plugin-stealth": "^2.11.2",
+    "ws": "^8.20.0",
     "zustand": "^4.5.2"
   },
   "devDependencies": {

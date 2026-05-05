@@ -30,72 +30,141 @@ function notifyProfileStatusChange(profileId: string, isRunning: boolean) {
 }
 
 function getChromePath(): string {
-  return getSettings().chromePath
+  try {
+    const settings = getSettings()
+    if (!settings || !settings.chromePath) {
+      console.error('[Browser] Chrome path not configured in settings')
+      throw new Error('❌ Chrome chưa được cấu hình.\n\n📍 Cách fix:\n1. Vào Settings (⚙️)\n2. Nhấn "Chọn Chrome"\n3. Chọn file Chrome trên máy bạn')
+    }
+    
+    // Verify Chrome exists at configured path
+    if (!existsSync(settings.chromePath)) {
+      console.error('[Browser] Chrome not found at configured path:', settings.chromePath)
+      throw new Error(`❌ Chrome không tồn tại tại:\n${settings.chromePath}\n\n📍 Cách fix:\n1. Vào Settings (⚙️)\n2. Nhấn "Chọn Chrome" để chọn lại\n3. Hoặc cài Chrome nếu chưa có`)
+    }
+    
+    return settings.chromePath
+  } catch (error) {
+    console.error('[Browser] Error getting Chrome path:', error)
+    if (error instanceof Error && error.message.includes('❌')) {
+      throw error // Re-throw our formatted errors
+    }
+    throw new Error('❌ Không thể lấy đường dẫn Chrome.\n\n📍 Cách fix: Vào Settings và chọn lại Chrome')
+  }
 }
 
 function injectSpoofScripts(profile: Profile, testPagePath: string): string {
-  const possibleResourcePaths = [
-    join(app.getAppPath(), 'resources'),
-    join(__dirname, '../../resources'),
-    join(process.cwd(), 'resources')
-  ]
+  try {
+    console.log('[Browser] Injecting spoof scripts for profile:', profile.id)
+    
+    const possibleResourcePaths = [
+      join(app.getAppPath(), 'resources'),
+      join(__dirname, '../../resources'),
+      join(process.cwd(), 'resources')
+    ]
 
-  const resourcesDir = possibleResourcePaths.find(p => existsSync(p)) || possibleResourcePaths[0]
+    const resourcesDir = possibleResourcePaths.find(p => existsSync(p))
+    if (!resourcesDir) {
+      console.warn('[Browser] Resources directory not found, skipping script injection')
+      return testPagePath
+    }
 
-  let htmlContent = readFileSync(testPagePath, 'utf-8')
-  const scripts: string[] = []
+    let htmlContent: string
+    try {
+      htmlContent = readFileSync(testPagePath, 'utf-8')
+    } catch (error) {
+      console.error('[Browser] Failed to read test page:', error)
+      throw new Error('Không thể đọc file test page')
+    }
 
-  // WebRTC blocker - Always inject if WebRTC is disabled
-  if (profile.fingerprint.webRTC === 'disabled') {
-    const webrtcScript = readFileSync(join(resourcesDir, 'webrtc-inject.js'), 'utf-8')
-    scripts.push(webrtcScript)
+    const scripts: string[] = []
+
+    // WebRTC blocker - Always inject if WebRTC is disabled
+    if (profile.fingerprint.webRTC === 'disabled') {
+      try {
+        const webrtcScript = readFileSync(join(resourcesDir, 'webrtc-inject.js'), 'utf-8')
+        scripts.push(webrtcScript)
+      } catch (error) {
+        console.warn('[Browser] WebRTC script not found, skipping')
+      }
+    }
+
+    // Fonts spoof
+    if (profile.fingerprint.fonts) {
+      try {
+        const fontsScript = readFileSync(join(resourcesDir, 'fonts-spoof.js'), 'utf-8')
+        scripts.push(fontsScript.replace('%FONTS_LIST%', JSON.stringify(profile.fingerprint.fonts)))
+      } catch (error) {
+        console.warn('[Browser] Fonts script not found, skipping')
+      }
+    }
+
+    // Audio spoof
+    if (profile.fingerprint.audioContext) {
+      try {
+        const audioScript = readFileSync(join(resourcesDir, 'audio-spoof.js'), 'utf-8')
+        scripts.push(audioScript.replace('%AUDIO_CONFIG%', JSON.stringify(profile.fingerprint.audioContext)))
+      } catch (error) {
+        console.warn('[Browser] Audio script not found, skipping')
+      }
+    }
+
+    // Screen spoof
+    if (profile.fingerprint.screen) {
+      try {
+        const screenScript = readFileSync(join(resourcesDir, 'screen-spoof.js'), 'utf-8')
+        scripts.push(screenScript.replace('%SCREEN_CONFIG%', JSON.stringify(profile.fingerprint.screen)))
+      } catch (error) {
+        console.warn('[Browser] Screen script not found, skipping')
+      }
+    }
+
+    // Geolocation spoof
+    if (profile.fingerprint.geolocation) {
+      try {
+        const geoScript = readFileSync(join(resourcesDir, 'geolocation-spoof.js'), 'utf-8')
+        scripts.push(geoScript.replace('%GEO_CONFIG%', JSON.stringify(profile.fingerprint.geolocation)))
+      } catch (error) {
+        console.warn('[Browser] Geolocation script not found, skipping')
+      }
+    }
+
+    // Battery spoof
+    if (profile.fingerprint.battery) {
+      try {
+        const batteryScript = readFileSync(join(resourcesDir, 'battery-spoof.js'), 'utf-8')
+        scripts.push(batteryScript.replace('%BATTERY_CONFIG%', JSON.stringify(profile.fingerprint.battery)))
+      } catch (error) {
+        console.warn('[Browser] Battery script not found, skipping')
+      }
+    }
+
+    // Replace or inject scripts
+    if (scripts.length > 0) {
+      const injectedScripts = `<script>${scripts.join('\n')}</script>`
+      htmlContent = htmlContent.replace('<script src="webrtc-inject.js"></script>', injectedScripts)
+    }
+
+    const tempPath = join(app.getPath('userData'), 'profiles', profile.id, 'test-page.html')
+    const tempDir = join(app.getPath('userData'), 'profiles', profile.id)
+    
+    try {
+      if (!existsSync(tempDir)) {
+        require('fs').mkdirSync(tempDir, { recursive: true })
+      }
+      writeFileSync(tempPath, htmlContent)
+      console.log('[Browser] Test page created at:', tempPath)
+    } catch (error) {
+      console.error('[Browser] Failed to write test page:', error)
+      throw new Error('Không thể tạo file test page')
+    }
+
+    return tempPath
+  } catch (error) {
+    console.error('[Browser] Error in injectSpoofScripts:', error)
+    // Return original path as fallback
+    return testPagePath
   }
-
-  // Fonts spoof
-  if (profile.fingerprint.fonts) {
-    const fontsScript = readFileSync(join(resourcesDir, 'fonts-spoof.js'), 'utf-8')
-    scripts.push(fontsScript.replace('%FONTS_LIST%', JSON.stringify(profile.fingerprint.fonts)))
-  }
-
-  // Audio spoof
-  if (profile.fingerprint.audioContext) {
-    const audioScript = readFileSync(join(resourcesDir, 'audio-spoof.js'), 'utf-8')
-    scripts.push(audioScript.replace('%AUDIO_CONFIG%', JSON.stringify(profile.fingerprint.audioContext)))
-  }
-
-  // Screen spoof
-  if (profile.fingerprint.screen) {
-    const screenScript = readFileSync(join(resourcesDir, 'screen-spoof.js'), 'utf-8')
-    scripts.push(screenScript.replace('%SCREEN_CONFIG%', JSON.stringify(profile.fingerprint.screen)))
-  }
-
-  // Geolocation spoof
-  if (profile.fingerprint.geolocation) {
-    const geoScript = readFileSync(join(resourcesDir, 'geolocation-spoof.js'), 'utf-8')
-    scripts.push(geoScript.replace('%GEO_CONFIG%', JSON.stringify(profile.fingerprint.geolocation)))
-  }
-
-  // Battery spoof
-  if (profile.fingerprint.battery) {
-    const batteryScript = readFileSync(join(resourcesDir, 'battery-spoof.js'), 'utf-8')
-    scripts.push(batteryScript.replace('%BATTERY_CONFIG%', JSON.stringify(profile.fingerprint.battery)))
-  }
-
-  // Replace or inject scripts
-  if (scripts.length > 0) {
-    const injectedScripts = `<script>${scripts.join('\n')}</script>`
-    // Replace the webrtc-inject.js script tag with inline scripts
-    htmlContent = htmlContent.replace('<script src="webrtc-inject.js"></script>', injectedScripts)
-  }
-
-  const tempPath = join(app.getPath('userData'), 'profiles', profile.id, 'test-page.html')
-  const tempDir = join(app.getPath('userData'), 'profiles', profile.id)
-  if (!existsSync(tempDir)) {
-    require('fs').mkdirSync(tempDir, { recursive: true })
-  }
-  writeFileSync(tempPath, htmlContent)
-
-  return tempPath
 }
 
 function buildChromeArgs(profile: Profile, userDataDir: string, testPagePath: string, extensionPath?: string): string[] {
@@ -173,57 +242,100 @@ export function unregisterAutomationProfile(profileId: string): void {
 }
 
 export function launchProfile(profile: Profile): { success: boolean; error?: string } {
+  console.log('[Browser] Launching profile:', profile.id, profile.name)
+  
+  // Check if profile is already running
   if (runningProfiles.has(profile.id) || automationProfiles.has(profile.id)) {
+    console.warn('[Browser] Profile already running:', profile.id)
     return { success: false, error: 'Profile đang mở' }
   }
 
-  const chromePath = getChromePath()
-  const userDataDir = join(app.getPath('userData'), 'profiles', profile.id)
+  // Get Chrome path with error handling
+  let chromePath: string
+  try {
+    chromePath = getChromePath()
+    console.log('[Browser] Chrome path:', chromePath)
+  } catch (error) {
+    console.error('[Browser] Failed to get Chrome path:', error)
+    return { success: false, error: error instanceof Error ? error.message : 'Không thể lấy đường dẫn Chrome' }
+  }
 
-  // Try multiple paths to find test page
-  const { existsSync } = require('fs')
+  // Verify Chrome exists
+  if (!existsSync(chromePath)) {
+    console.error('[Browser] Chrome not found at:', chromePath)
+    return { success: false, error: 'Chrome không tồn tại tại đường dẫn đã cấu hình. Vui lòng kiểm tra Settings.' }
+  }
+
+  const userDataDir = join(app.getPath('userData'), 'profiles', profile.id)
+  console.log('[Browser] User data dir:', userDataDir)
+
+  // Try multiple paths to find test page (NO hardcoded paths)
   const possiblePaths = [
     join(app.getAppPath(), 'resources', 'fingerprint-test.html'),
     join(__dirname, '../../resources/fingerprint-test.html'),
-    join(process.cwd(), 'resources', 'fingerprint-test.html'),
-    '/Users/kongka0809/Desktop/zenvy-browser/resources/fingerprint-test.html'
+    join(process.cwd(), 'resources', 'fingerprint-test.html')
   ]
 
   let testPagePath = possiblePaths.find(p => existsSync(p))
   if (!testPagePath) {
-    console.error('Test page not found! Tried:', possiblePaths)
-    testPagePath = possiblePaths[0] // fallback
+    console.error('[Browser] Test page not found! Tried:', possiblePaths)
+    return { success: false, error: 'Không tìm thấy file test page. Vui lòng kiểm tra cài đặt app.' }
   }
-  console.log('Using test page path:', testPagePath)
+  console.log('[Browser] Using test page:', testPagePath)
 
   // Inject spoof scripts into test page
-  testPagePath = injectSpoofScripts(profile, testPagePath)
+  try {
+    testPagePath = injectSpoofScripts(profile, testPagePath)
+  } catch (error) {
+    console.error('[Browser] Failed to inject spoof scripts:', error)
+    // Continue anyway with original test page
+  }
 
-  // Find WebRTC blocker extension
+  // Find WebRTC blocker extension (optional)
   let extensionPath: string | undefined
   if (profile.fingerprint.webRTC === 'disabled') {
     const extensionPaths = [
       join(app.getAppPath(), 'resources', 'webrtc-blocker'),
       join(__dirname, '../../resources/webrtc-blocker'),
-      join(process.cwd(), 'resources', 'webrtc-blocker'),
-      '/Users/kongka0809/Desktop/zenvy-browser/resources/webrtc-blocker'
+      join(process.cwd(), 'resources', 'webrtc-blocker')
     ]
     extensionPath = extensionPaths.find(p => existsSync(p))
     if (extensionPath) {
-      console.log('Loading WebRTC blocker extension:', extensionPath)
+      console.log('[Browser] Loading WebRTC blocker extension:', extensionPath)
+    } else {
+      console.warn('[Browser] WebRTC blocker extension not found')
     }
   }
 
+  // Build Chrome arguments
   const args = buildChromeArgs(profile, userDataDir, testPagePath, extensionPath)
+  console.log('[Browser] Chrome args count:', args.length)
 
+  // Launch Chrome
   try {
     const child = spawn(chromePath, args, { detached: true, stdio: 'ignore' })
+    
+    if (!child || !child.pid) {
+      console.error('[Browser] Failed to spawn Chrome process')
+      return { success: false, error: 'Không thể khởi động Chrome. Vui lòng thử lại.' }
+    }
+
     child.unref()
     
     const pid = child.pid
     runningProfiles.set(profile.id, { process: child, pid })
+    console.log('[Browser] Chrome launched with PID:', pid)
 
-    child.on('exit', () => {
+    // Handle process exit
+    child.on('exit', (code, signal) => {
+      console.log('[Browser] Chrome process exited:', { profileId: profile.id, code, signal })
+      runningProfiles.delete(profile.id)
+      notifyProfileStatusChange(profile.id, false)
+    })
+
+    // Handle process error
+    child.on('error', (error) => {
+      console.error('[Browser] Chrome process error:', error)
       runningProfiles.delete(profile.id)
       notifyProfileStatusChange(profile.id, false)
     })
@@ -232,8 +344,12 @@ export function launchProfile(profile: Profile): { success: boolean; error?: str
     notifyProfileStatusChange(profile.id, true)
 
     return { success: true }
-  } catch (err) {
-    return { success: false, error: String(err) }
+  } catch (error) {
+    console.error('[Browser] Error launching Chrome:', error)
+    return { 
+      success: false, 
+      error: error instanceof Error ? error.message : 'Không thể khởi động Chrome. Vui lòng thử lại.' 
+    }
   }
 }
 

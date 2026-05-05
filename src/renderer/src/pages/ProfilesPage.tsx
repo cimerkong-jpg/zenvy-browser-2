@@ -4,7 +4,9 @@ import type { ReactNode } from 'react'
 import { useStore } from '../store/useStore'
 import ProfileModal from '../components/ProfileModal'
 import ProfileRow from '../components/ProfileRow'
+import QuickEditProfileModal from '../components/QuickEditProfileModal'
 import { CreateGroupModal, EditGroupModal, DeleteGroupModal } from '../components/GroupModals'
+import Select from '../components/ui/Select'
 import type { Profile, AutomationScript } from '../../../shared/types'
 
 type StatusFilter = 'all' | 'open' | 'closed'
@@ -53,6 +55,20 @@ export default function ProfilesPage() {
   const [showCreateGroupModal, setShowCreateGroupModal] = useState(false)
   const [editingGroup, setEditingGroup] = useState<{ id: string; name: string } | null>(null)
   const [deletingGroup, setDeletingGroup] = useState<{ id: string; name: string } | null>(null)
+
+  // Quick edit state
+  const [quickEditProfile, setQuickEditProfile] = useState<{ profile: Profile; field: 'name' | 'notes' } | null>(null)
+
+  // Quick edit handler
+  const handleQuickEdit = (profile: Profile, field: 'name' | 'notes') => {
+    setQuickEditProfile({ profile, field })
+  }
+
+  // Quick edit save handler
+  const handleQuickEditSave = async (profileId: string, updates: Partial<Profile>) => {
+    await window.api.profiles.update(profileId, updates)
+    await loadAll()
+  }
 
   const filtered = useMemo(() => {
     const q = searchQuery.toLowerCase().trim()
@@ -211,66 +227,77 @@ export default function ProfilesPage() {
       <section className="flex min-w-0 flex-1 flex-col">
         <div className="drag-region h-8 flex-shrink-0" />
 
-        {/* ── Toolbar — Compact, single-line ── */}
-        <div className="no-drag flex items-center justify-between gap-2 border-b border-purple-500/10 px-4 py-2">
-          <div className="flex items-center gap-2">
-            <BulkButton disabled={!selectedIds.length} onClick={() => setShowAutoModal(true)}>Auto</BulkButton>
-            <BulkButton disabled={!selectedIds.length} onClick={async () => {
-              const toOpen = selectedIds.filter(id => !runningIds.includes(id))
-              const profile = profiles.find(p => toOpen.includes(p.id))
-              if (profile) await window.api.browser.launch(profile)
-              useStore.getState().setRunningIds(await window.api.browser.running())
-            }}>Open</BulkButton>
-            <BulkButton disabled={!selectedIds.length} onClick={async () => {
-              const toClose = selectedIds.filter(id => runningIds.includes(id))
-              await Promise.all(toClose.map(id => window.api.browser.close(id)))
-              useStore.getState().setRunningIds(await window.api.browser.running())
-            }}>Close</BulkButton>
-            <BulkButton
-              onClick={() => { setMoveTargetGroupId(''); setShowMoveGroupModal(true) }}
-              disabled={!selectedIds.length}
-            >Move</BulkButton>
-            <BulkButton onClick={exportSelected} disabled={!selectedIds.length}>Export</BulkButton>
-            <BulkButton onClick={deleteSelected} disabled={!selectedIds.length} danger>Delete</BulkButton>
-            {selectedIds.length > 0 && (
-              <button onClick={clearSelection} className="rounded-lg px-3 py-1.5 text-xs text-slate-500 hover:text-slate-300 transition-colors">
-                Clear
-              </button>
-            )}
-          </div>
-          <div className="flex items-center gap-2">
-            <button onClick={importProfiles} className="rounded-lg bg-white/5 border border-white/10 px-3 py-1.5 text-xs font-medium text-slate-300 hover:bg-white/10 transition-colors">
-              Import
+        {/* ── Header + Actions ── */}
+        <div className="no-drag border-b border-[#1F2230] px-6 py-4">
+          {/* Title + Primary Action */}
+          <div className="flex items-center justify-between mb-4">
+            <div>
+              <h1 className="text-xl font-semibold text-[#E5E7EB]">Profiles</h1>
+              <p className="mt-0.5 text-sm text-[#6B7280]">
+                {selectedGroup?.name ?? 'All'} · {filtered.length} {filtered.length === 1 ? 'profile' : 'profiles'}
+              </p>
+            </div>
+            <button
+              onClick={() => setShowCreate(true)}
+              className="rounded-lg bg-[#7C3AED] px-4 py-2 text-sm font-medium text-white hover:bg-[#8B5CF6] transition-colors"
+            >
+              + New Profile
             </button>
+          </div>
+
+          {/* Search + Filters + Actions */}
+          <div className="flex items-center gap-3">
+            {/* Search */}
+            <div className="relative min-w-[320px] flex-1">
+              <svg className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-[#6B7280]" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+              </svg>
+              <input
+                value={searchQuery}
+                onChange={(event) => setSearchQuery(event.target.value)}
+                placeholder="Search profiles..."
+                className="h-9 w-full rounded-lg border border-[#1F2230] bg-[#111218] pl-10 pr-3 text-sm text-[#E5E7EB] outline-none transition-colors placeholder:text-[#6B7280] focus:border-[#7C3AED]/50"
+              />
+            </div>
+
+            {/* Status Filter */}
+            <Select
+              value={statusFilter}
+              onChange={(value) => setStatusFilter(value as StatusFilter)}
+              options={[
+                { value: 'all', label: 'All Status' },
+                { value: 'open', label: 'Open' },
+                { value: 'closed', label: 'Closed' }
+              ]}
+              className="h-9 w-[160px] flex-shrink-0"
+            />
+
+            {/* Sort */}
             <button
               ref={sortRef}
               onClick={() => {
                 if (sortRef.current) {
                   const rect = sortRef.current.getBoundingClientRect()
-                  setSortMenuPos({ x: rect.left, y: rect.bottom + 4 })
+                  const windowWidth = window.innerWidth
+                  // Align to right if near screen edge
+                  const alignRight = rect.right > windowWidth - 200
+                  setSortMenuPos({ 
+                    x: alignRight ? rect.right - 200 : rect.left, 
+                    y: rect.bottom + 4 
+                  })
                 }
                 setShowSortMenu(v => !v)
               }}
-              className={`rounded-lg border px-3 py-1.5 text-xs font-medium transition-colors ${
+              className={`h-9 w-[88px] flex-shrink-0 rounded-lg border px-3 text-sm font-medium transition-colors ${
                 sortBy !== 'default'
-                  ? 'border-purple-500/30 bg-purple-500/10 text-purple-400'
-                  : 'border-white/10 bg-white/5 text-slate-300 hover:bg-white/10'
+                  ? 'border-[#7C3AED]/50 bg-[#7C3AED]/10 text-[#7C3AED]'
+                  : 'border-[#1F2230] bg-[#111218] text-[#9CA3AF] hover:text-[#E5E7EB]'
               }`}
             >
               {sortBy !== 'default' ? SORT_LABELS[sortBy] : 'Sort'}
             </button>
-          </div>
-        </div>
 
-        {/* ── Header — Compact ── */}
-        <div className="no-drag flex items-center justify-between px-4 py-2">
-          <div>
-            <h1 className="text-lg font-semibold text-white">Profiles</h1>
-            <p className="text-xs text-slate-400">
-              {selectedGroup?.name ?? 'All'} · {filtered.length} shown
-            </p>
-          </div>
-          <div className="flex items-center gap-2">
+            {/* Refresh */}
             <button
               onClick={async () => {
                 setIsReloading(true)
@@ -278,83 +305,157 @@ export default function ProfilesPage() {
                 setTimeout(() => setIsReloading(false), 500)
               }}
               disabled={isReloading}
-              className="rounded-lg bg-white/5 border border-white/10 px-3 py-1.5 text-sm text-slate-300 hover:bg-white/10 disabled:opacity-50 transition-colors flex items-center gap-2"
+              className="h-9 w-9 flex items-center justify-center rounded-lg border border-[#1F2230] bg-[#111218] text-[#9CA3AF] hover:text-[#E5E7EB] disabled:opacity-50 transition-colors"
+              title="Refresh"
             >
-              {isReloading && (
-                <svg className="animate-spin h-3.5 w-3.5" fill="none" viewBox="0 0 24 24">
+              {isReloading ? (
+                <svg className="animate-spin h-4 w-4" fill="none" viewBox="0 0 24 24">
                   <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
                   <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
                 </svg>
+              ) : (
+                <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+                </svg>
               )}
-              Refresh
-            </button>
-            <button
-              onClick={() => setShowCreate(true)}
-              className="rounded-lg bg-gradient-to-r from-violet-600 to-purple-600 px-4 py-2 text-sm font-medium text-white hover:shadow-[0_0_20px_rgba(139,92,246,0.4)] transition-all"
-            >
-              + New
             </button>
           </div>
+
+          {/* Bulk Actions - Premium Selection Toolbar */}
+          {selectedIds.length > 0 && (
+            <div className="mt-3 flex items-center gap-3 rounded-xl border border-[#1F2230] bg-[#111218] px-4 py-2.5 shadow-lg animate-in fade-in slide-in-from-top-2 duration-200">
+              {/* Selected Count Badge */}
+              <div className="flex items-center gap-2">
+                <div className="rounded-full bg-[#7C3AED]/10 px-3 py-1 border border-[#7C3AED]/20">
+                  <span className="text-xs font-semibold text-[#7C3AED]">
+                    {selectedIds.length} đã chọn
+                  </span>
+                </div>
+                <div className="h-5 w-px bg-[#1F2230]" />
+              </div>
+
+              {/* Action Buttons */}
+              <div className="flex items-center gap-2">
+                {/* Open */}
+                <button
+                  onClick={async () => {
+                    const toOpen = selectedIds.filter(id => !runningIds.includes(id))
+                    const profile = profiles.find(p => toOpen.includes(p.id))
+                    if (profile) await window.api.browser.launch(profile)
+                    useStore.getState().setRunningIds(await window.api.browser.running())
+                  }}
+                  className="flex items-center gap-1.5 rounded-lg bg-[#7C3AED]/10 border border-[#7C3AED]/20 px-3 py-1.5 text-xs font-medium text-[#7C3AED] hover:bg-[#7C3AED]/20 transition-all"
+                >
+                  <svg className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M14.752 11.168l-3.197-2.132A1 1 0 0010 9.87v4.263a1 1 0 001.555.832l3.197-2.132a1 1 0 000-1.664z" />
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                  </svg>
+                  Open
+                </button>
+
+                {/* Close */}
+                <button
+                  onClick={async () => {
+                    const toClose = selectedIds.filter(id => runningIds.includes(id))
+                    await Promise.all(toClose.map(id => window.api.browser.close(id)))
+                    useStore.getState().setRunningIds(await window.api.browser.running())
+                  }}
+                  className="flex items-center gap-1.5 rounded-lg border border-[#1F2230] bg-[#0B0B0F] px-3 py-1.5 text-xs font-medium text-[#9CA3AF] hover:bg-[#1F2230] hover:text-[#E5E7EB] transition-all"
+                >
+                  <svg className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 10a1 1 0 011-1h4a1 1 0 011 1v4a1 1 0 01-1 1h-4a1 1 0 01-1-1v-4z" />
+                  </svg>
+                  Close
+                </button>
+
+                {/* Move */}
+                <button
+                  onClick={() => { setMoveTargetGroupId(''); setShowMoveGroupModal(true) }}
+                  className="flex items-center gap-1.5 rounded-lg border border-[#1F2230] bg-[#0B0B0F] px-3 py-1.5 text-xs font-medium text-[#9CA3AF] hover:bg-[#1F2230] hover:text-[#E5E7EB] transition-all"
+                >
+                  <svg className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7h12m0 0l-4-4m4 4l-4 4m0 6H4m0 0l4 4m-4-4l4-4" />
+                  </svg>
+                  Move
+                </button>
+
+                {/* Export */}
+                <button
+                  onClick={exportSelected}
+                  className="flex items-center gap-1.5 rounded-lg border border-[#1F2230] bg-[#0B0B0F] px-3 py-1.5 text-xs font-medium text-[#9CA3AF] hover:bg-[#1F2230] hover:text-[#E5E7EB] transition-all"
+                >
+                  <svg className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
+                  </svg>
+                  Export
+                </button>
+
+                {/* Delete */}
+                <button
+                  onClick={deleteSelected}
+                  className="flex items-center gap-1.5 rounded-lg border border-red-500/20 bg-red-500/5 px-3 py-1.5 text-xs font-medium text-red-400 hover:bg-red-500/10 hover:border-red-500/30 transition-all"
+                >
+                  <svg className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                  </svg>
+                  Delete
+                </button>
+              </div>
+
+              {/* Spacer */}
+              <div className="flex-1" />
+
+              {/* Clear Button */}
+              <button
+                onClick={clearSelection}
+                className="flex items-center gap-1.5 rounded-lg px-2 py-1.5 text-xs font-medium text-[#6B7280] hover:text-[#9CA3AF] hover:bg-[#1F2230] transition-all"
+                title="Clear selection"
+              >
+                <svg className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                </svg>
+                Clear
+              </button>
+            </div>
+          )}
         </div>
 
         {/* ── Stats — Compact ── */}
-        <div className="no-drag grid grid-cols-4 gap-2 px-4 pb-2">
+        <div className="no-drag grid grid-cols-4 gap-2 px-6 py-3">
           <CompactStat label="Total" value={filtered.length} />
           <CompactStat label="Open" value={openCount} tone="purple" />
           <CompactStat label="Closed" value={closedCount} tone="orange" />
           <CompactStat label="Selected" value={selectedCount} tone="purple" />
         </div>
 
-        {/* ── Filters — Single line, compact ── */}
-        <div className="no-drag px-4 pb-3">
-          <div className="flex items-center gap-2">
-            <div className="relative flex-1">
-              <span className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-slate-500 text-sm">⌕</span>
-              <input
-                value={searchQuery}
-                onChange={(event) => setSearchQuery(event.target.value)}
-                placeholder="Search name, notes, proxy..."
-                className="h-8 w-full rounded-lg border border-purple-500/10 bg-white/5 pl-9 pr-3 text-sm text-slate-300 outline-none transition-colors placeholder:text-slate-500 focus:border-purple-500/30"
-              />
-            </div>
-            <select
-              value={statusFilter}
-              onChange={(event) => setStatusFilter(event.target.value as StatusFilter)}
-              className="h-8 w-32 rounded-lg border border-purple-500/10 bg-white/5 px-3 text-sm text-slate-300 outline-none focus:border-purple-500/30 transition-colors"
-            >
-              <option value="all">All</option>
-              <option value="open">Open</option>
-              <option value="closed">Closed</option>
-            </select>
-          </div>
-        </div>
-
         <div className="min-h-0 flex-1 px-4 pb-4">
           <div className="h-full overflow-hidden rounded-xl border border-purple-500/10 bg-surface/50 backdrop-blur-md">
             <div className="h-full overflow-auto">
               <table className="w-full min-w-[980px] text-left">
-                <thead className="sticky top-0 z-20 bg-[#13111F] border-b border-purple-500/10">
+                <thead className="sticky top-0 z-20 bg-[#0B0B0F] border-b border-[#1F2230]">
                   <tr>
-                    <th className="w-12 px-3 py-2">
+                    <th className="w-10 px-4 py-3">
                       <input
                         type="checkbox"
                         checked={allSelected}
                         onChange={() => (allSelected ? clearSelection() : selectAll(filtered.map((profile) => profile.id)))}
-                        className="h-4 w-4 rounded border-purple-500/30 bg-white/5 text-purple-500"
+                        className="h-4 w-4 rounded border-[#1F2230] bg-[#111218] text-purple-500 focus:ring-purple-500/20"
                       />
                     </th>
-                    <HeaderCell>ID</HeaderCell>
-                    <HeaderCell>Group</HeaderCell>
-                    <HeaderCell>Name</HeaderCell>
-                    <HeaderCell>Notes</HeaderCell>
-                    <HeaderCell>Proxy</HeaderCell>
-                    <th className="sticky right-0 z-30 bg-[#13111F] px-3 py-2 text-xs font-medium text-slate-400">Actions</th>
+                    <th className="px-4 py-3 text-xs font-medium uppercase tracking-wider text-[#6B7280]">ID</th>
+                    <th className="px-4 py-3 text-xs font-medium uppercase tracking-wider text-[#6B7280]">Name</th>
+                    <th className="px-4 py-3 text-xs font-medium uppercase tracking-wider text-[#6B7280]">Group</th>
+                    <th className="px-4 py-3 text-xs font-medium uppercase tracking-wider text-[#6B7280]">Notes</th>
+                    <th className="px-4 py-3 text-xs font-medium uppercase tracking-wider text-[#6B7280]">Status</th>
+                    <th className="px-4 py-3 text-xs font-medium uppercase tracking-wider text-[#6B7280]">Proxy</th>
+                    <th className="px-4 py-3 text-xs font-medium uppercase tracking-wider text-[#6B7280] text-right">Actions</th>
                   </tr>
                 </thead>
                 <tbody>
                   {filtered.length === 0 ? (
                     <tr>
-                      <td colSpan={7} className="py-16 text-center">
+                      <td colSpan={8} className="py-16 text-center">
                         <div className="mx-auto flex max-w-sm flex-col items-center gap-2">
                           <div className="flex h-12 w-12 items-center justify-center rounded-full border border-purple-500/20 bg-purple-500/10 text-xl text-purple-300">
                             ▣
@@ -379,6 +480,7 @@ export default function ProfilesPage() {
                         isRunning={runningIds.includes(profile.id)}
                         isSelected={selectedIds.includes(profile.id)}
                         onEdit={setEditProfile}
+                        onQuickEdit={handleQuickEdit}
                       />
                     ))
                   )}
@@ -394,6 +496,16 @@ export default function ProfilesPage() {
 
         {showCreate && <ProfileModal profile={null} onClose={() => setShowCreate(false)} />}
         {editProfile && <ProfileModal profile={editProfile} onClose={() => setEditProfile(null)} />}
+        
+        {/* Quick Edit Modal */}
+        {quickEditProfile && (
+          <QuickEditProfileModal
+            profile={quickEditProfile.profile}
+            field={quickEditProfile.field}
+            onClose={() => setQuickEditProfile(null)}
+            onSave={handleQuickEditSave}
+          />
+        )}
         
         {/* Group Modals */}
         {showCreateGroupModal && (
@@ -736,19 +848,19 @@ function MoveGroupModal({
           </div>
         </div>
 
-        <select
-          value={moveTargetGroupId}
-          onChange={(event) => setMoveTargetGroupId(event.target.value)}
-          className="mt-6 h-14 w-full rounded-lg border border-slate-600/70 bg-[#202B38] px-4 text-sm text-white outline-none transition-colors focus:border-purple-400"
-        >
-          <option value="">Chọn nhóm hồ sơ</option>
-          <option value="none">Không có nhóm</option>
-          {groups.map((group) => (
-            <option key={group.id} value={group.id}>
-              {group.name}
-            </option>
-          ))}
-        </select>
+        <div className="mt-6">
+          <Select
+            value={moveTargetGroupId}
+            onChange={setMoveTargetGroupId}
+            options={[
+              { value: '', label: 'Chọn nhóm hồ sơ' },
+              { value: 'none', label: 'Không có nhóm' },
+              ...groups.map(group => ({ value: group.id, label: group.name }))
+            ]}
+            placeholder="Chọn nhóm hồ sơ"
+            className="h-12 w-full"
+          />
+        </div>
 
         <div className="mt-6 flex justify-end gap-3">
           <button
@@ -933,23 +1045,24 @@ function AutomationQuickModal({ selectedProfiles, onClose }: {
               <div className="flex items-center gap-4">
                 <span className="w-28 shrink-0 text-sm text-slate-400">Quy trình</span>
                 <div className="flex flex-1 gap-2">
-                  <select
+                  <Select
                     value={scriptGroup}
-                    onChange={e => setScriptGroup(e.target.value)}
-                    className="w-28 rounded-lg border border-white/[0.08] bg-white/[0.04] px-3 py-2 text-xs text-slate-300 focus:outline-none focus:border-purple-500/40"
-                  >
-                    <option value="all" className="bg-[#1B2333]">All</option>
-                  </select>
-                  <select
+                    onChange={setScriptGroup}
+                    options={[
+                      { value: 'all', label: 'All' }
+                    ]}
+                    className="w-28"
+                  />
+                  <Select
                     value={scriptId}
-                    onChange={e => setScriptId(e.target.value)}
-                    className="flex-1 rounded-lg border border-purple-500/40 bg-white/[0.04] px-3 py-2 text-xs text-white focus:outline-none focus:border-purple-500/60"
-                  >
-                    <option value="" className="bg-[#1B2333]">Vui lòng chọn quy trình</option>
-                    {filtered.map(s => (
-                      <option key={s.id} value={s.id} className="bg-[#1B2333]">{s.name}</option>
-                    ))}
-                  </select>
+                    onChange={setScriptId}
+                    options={[
+                      { value: '', label: 'Vui lòng chọn quy trình' },
+                      ...filtered.map(s => ({ value: s.id, label: s.name }))
+                    ]}
+                    placeholder="Vui lòng chọn quy trình"
+                    className="flex-1"
+                  />
                 </div>
               </div>
 

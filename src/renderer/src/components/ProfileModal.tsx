@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react'
 import type { Profile, Fingerprint, Proxy } from '../../../shared/types'
 import { useStore } from '../store/useStore'
 import Collapsible from './Collapsible'
+import Select from './ui/Select'
 
 const UA_PRESETS: Record<string, string> = {
   'Chrome 120 / Windows': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
@@ -64,6 +65,7 @@ export default function ProfileModal({ profile, onClose }: Props) {
   const [templateName, setTemplateName] = useState('')
   const [templateDesc, setTemplateDesc] = useState('')
   const [templateIcon, setTemplateIcon] = useState('⭐')
+  const [selectedUAPreset, setSelectedUAPreset] = useState('')
 
   useEffect(() => {
     window.api.templates.getAll().then(setTemplates)
@@ -167,26 +169,33 @@ export default function ProfileModal({ profile, onClose }: Props) {
   ] as const
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm">
-      <div className="glass rounded-2xl w-full max-w-2xl max-h-[85vh] flex flex-col overflow-hidden shadow-purple-lg">
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-sm">
+      <div className="w-full max-w-3xl max-h-[90vh] flex flex-col overflow-hidden rounded-xl border border-[#1F2230] bg-[#111218] shadow-2xl">
         {/* Header */}
-        <div className="flex items-center justify-between px-6 py-4 border-b border-white/5">
-          <h2 className="text-base font-semibold text-white">
+        <div className="flex items-center justify-between border-b border-[#1F2230] px-6 py-3.5">
+          <h2 className="text-base font-semibold text-[#E5E7EB]">
             {isEdit ? 'Chỉnh sửa hồ sơ' : 'Tạo hồ sơ mới'}
           </h2>
-          <button onClick={onClose} className="text-slate-500 hover:text-white transition-colors text-lg">✕</button>
+          <button 
+            onClick={onClose} 
+            className="flex h-8 w-8 items-center justify-center rounded-lg text-[#9CA3AF] hover:bg-[#1F2230] hover:text-[#E5E7EB] transition-colors"
+          >
+            <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+            </svg>
+          </button>
         </div>
 
         {/* Tabs */}
-        <div className="flex gap-1 px-6 pt-4">
+        <div className="flex gap-2 border-b border-[#1F2230] px-6">
           {tabs.map((t) => (
             <button
               key={t.key}
               onClick={() => setTab(t.key)}
-              className={`px-4 py-1.5 rounded-lg text-sm font-medium transition-all ${
+              className={`px-4 py-2.5 text-[13px] font-medium transition-colors border-b-2 ${
                 tab === t.key
-                  ? 'bg-purple-600/20 text-purple-300 border border-purple-500/30'
-                  : 'text-slate-500 hover:text-white hover:bg-white/5'
+                  ? 'border-[#7C3AED] text-[#E5E7EB]'
+                  : 'border-transparent text-[#6B7280] hover:text-[#9CA3AF] hover:border-[#374151]'
               }`}
             >
               {t.label}
@@ -208,16 +217,15 @@ export default function ProfileModal({ profile, onClose }: Props) {
               </Field>
 
               <Field label="Nhóm">
-                <select
+                <Select
                   value={groupId}
-                  onChange={(e) => setGroupId(e.target.value)}
-                  className="input-field"
-                >
-                  <option value="">Không có nhóm</option>
-                  {groups.map((g) => (
-                    <option key={g.id} value={g.id}>{g.name}</option>
-                  ))}
-                </select>
+                  onChange={setGroupId}
+                  options={[
+                    { value: '', label: 'Không có nhóm' },
+                    ...groups.map(g => ({ value: g.id, label: g.name }))
+                  ]}
+                  placeholder="Chọn nhóm"
+                />
               </Field>
 
               <Field label="Ghi chú">
@@ -266,18 +274,28 @@ export default function ProfileModal({ profile, onClose }: Props) {
               )}
 
               <Field label="User Agent">
-                <select
-                  onChange={(e) => fp('userAgent', UA_PRESETS[e.target.value] || '')}
-                  className="input-field mb-2"
-                >
-                  <option value="">Chọn preset...</option>
-                  {Object.keys(UA_PRESETS).map((k) => (
-                    <option key={k} value={k}>{k}</option>
-                  ))}
-                </select>
+                <Select
+                  value={selectedUAPreset}
+                  onChange={(value) => {
+                    setSelectedUAPreset(value)
+                    if (value && UA_PRESETS[value]) {
+                      fp('userAgent', UA_PRESETS[value])
+                    }
+                  }}
+                  options={[
+                    { value: '', label: 'Chọn preset...' },
+                    ...Object.keys(UA_PRESETS).map(k => ({ value: k, label: k }))
+                  ]}
+                  placeholder="Chọn preset..."
+                  className="mb-2"
+                />
                 <textarea
                   value={fingerprint.userAgent}
-                  onChange={(e) => fp('userAgent', e.target.value)}
+                  onChange={(e) => {
+                    fp('userAgent', e.target.value)
+                    // Clear preset selection if user manually edits
+                    setSelectedUAPreset('')
+                  }}
                   rows={2}
                   className="input-field resize-none font-mono text-xs"
                 />
@@ -285,11 +303,15 @@ export default function ProfileModal({ profile, onClose }: Props) {
 
               <div className="grid grid-cols-2 gap-4">
                 <Field label="Hệ điều hành">
-                  <select value={fingerprint.os} onChange={(e) => fp('os', e.target.value)} className="input-field">
-                    <option>Windows</option>
-                    <option>macOS</option>
-                    <option>Linux</option>
-                  </select>
+                  <Select
+                    value={fingerprint.os}
+                    onChange={(value) => fp('os', value)}
+                    options={[
+                      { value: 'Windows', label: 'Windows' },
+                      { value: 'macOS', label: 'macOS' },
+                      { value: 'Linux', label: 'Linux' }
+                    ]}
+                  />
                 </Field>
                 <Field label="Ngôn ngữ">
                   <input value={fingerprint.language} onChange={(e) => fp('language', e.target.value)} className="input-field" />
@@ -298,30 +320,44 @@ export default function ProfileModal({ profile, onClose }: Props) {
                   <input value={fingerprint.timezone} onChange={(e) => fp('timezone', e.target.value)} className="input-field" />
                 </Field>
                 <Field label="Hardware Concurrency">
-                  <select value={fingerprint.hardwareConcurrency} onChange={(e) => fp('hardwareConcurrency', Number(e.target.value))} className="input-field">
-                    {[2, 4, 6, 8, 10, 12, 16].map((n) => <option key={n}>{n}</option>)}
-                  </select>
+                  <Select
+                    value={String(fingerprint.hardwareConcurrency)}
+                    onChange={(value) => fp('hardwareConcurrency', Number(value))}
+                    options={[2, 4, 6, 8, 10, 12, 16].map(n => ({ value: String(n), label: String(n) }))}
+                  />
                 </Field>
               </div>
 
               <div className="grid grid-cols-3 gap-4">
                 <Field label="WebRTC">
-                  <select value={fingerprint.webRTC} onChange={(e) => fp('webRTC', e.target.value)} className="input-field">
-                    <option value="disabled">Vô hiệu hóa</option>
-                    <option value="real">Thực</option>
-                  </select>
+                  <Select
+                    value={fingerprint.webRTC}
+                    onChange={(value) => fp('webRTC', value)}
+                    options={[
+                      { value: 'disabled', label: 'Vô hiệu hóa' },
+                      { value: 'real', label: 'Thực' }
+                    ]}
+                  />
                 </Field>
                 <Field label="Canvas">
-                  <select value={fingerprint.canvas} onChange={(e) => fp('canvas', e.target.value)} className="input-field">
-                    <option value="noise">Nhiễu</option>
-                    <option value="real">Thực</option>
-                  </select>
+                  <Select
+                    value={fingerprint.canvas}
+                    onChange={(value) => fp('canvas', value)}
+                    options={[
+                      { value: 'noise', label: 'Nhiễu' },
+                      { value: 'real', label: 'Thực' }
+                    ]}
+                  />
                 </Field>
                 <Field label="WebGL">
-                  <select value={fingerprint.webGL} onChange={(e) => fp('webGL', e.target.value)} className="input-field">
-                    <option value="noise">Nhiễu</option>
-                    <option value="real">Thực</option>
-                  </select>
+                  <Select
+                    value={fingerprint.webGL}
+                    onChange={(value) => fp('webGL', value)}
+                    options={[
+                      { value: 'noise', label: 'Nhiễu' },
+                      { value: 'real', label: 'Thực' }
+                    ]}
+                  />
                 </Field>
               </div>
 
@@ -372,24 +408,26 @@ export default function ProfileModal({ profile, onClose }: Props) {
 
                 <Field label="Screen Resolution">
                   <div className="grid grid-cols-2 gap-2">
-                    <select
-                      onChange={(e) => {
+                    <Select
+                      value=""
+                      onChange={(value) => {
                         const presets: Record<string, any> = {
                           '1920x1080': { width: 1920, height: 1080, availWidth: 1920, availHeight: 1040, colorDepth: 24, pixelDepth: 24 },
                           '1366x768': { width: 1366, height: 768, availWidth: 1366, availHeight: 728, colorDepth: 24, pixelDepth: 24 },
                           '1440x900': { width: 1440, height: 900, availWidth: 1440, availHeight: 860, colorDepth: 24, pixelDepth: 24 }
                         }
-                        if (e.target.value && presets[e.target.value]) {
-                          setFingerprint(f => ({ ...f, screen: presets[e.target.value] }))
+                        if (value && presets[value]) {
+                          setFingerprint(f => ({ ...f, screen: presets[value] }))
                         }
                       }}
-                      className="input-field"
-                    >
-                      <option value="">Default</option>
-                      <option value="1920x1080">1920x1080</option>
-                      <option value="1366x768">1366x768</option>
-                      <option value="1440x900">1440x900</option>
-                    </select>
+                      options={[
+                        { value: '', label: 'Default' },
+                        { value: '1920x1080', label: '1920x1080' },
+                        { value: '1366x768', label: '1366x768' },
+                        { value: '1440x900', label: '1440x900' }
+                      ]}
+                      placeholder="Default"
+                    />
                     <button
                       onClick={() => setFingerprint(f => ({ ...f, screen: undefined }))}
                       className="px-3 py-1.5 rounded-lg text-sm bg-red-500/20 text-red-300 border border-red-500/30 hover:bg-red-500/30"
@@ -401,21 +439,22 @@ export default function ProfileModal({ profile, onClose }: Props) {
 
                 <Field label="Audio Context">
                   <div className="grid grid-cols-2 gap-2">
-                    <select
-                      value={fingerprint.audioContext?.sampleRate || ''}
-                      onChange={(e) => {
-                        const rate = e.target.value ? Number(e.target.value) as 44100 | 48000 : undefined
+                    <Select
+                      value={String(fingerprint.audioContext?.sampleRate || '')}
+                      onChange={(value) => {
+                        const rate = value ? Number(value) as 44100 | 48000 : undefined
                         setFingerprint(f => ({
                           ...f,
                           audioContext: rate ? { sampleRate: rate, channelCount: 2, maxChannelCount: 2 } : undefined
                         }))
                       }}
-                      className="input-field"
-                    >
-                      <option value="">Default</option>
-                      <option value="44100">44100 Hz</option>
-                      <option value="48000">48000 Hz</option>
-                    </select>
+                      options={[
+                        { value: '', label: 'Default' },
+                        { value: '44100', label: '44100 Hz' },
+                        { value: '48000', label: '48000 Hz' }
+                      ]}
+                      placeholder="Default"
+                    />
                     <button
                       onClick={() => setFingerprint(f => ({ ...f, audioContext: undefined }))}
                       className="px-3 py-1.5 rounded-lg text-sm bg-red-500/20 text-red-300 border border-red-500/30 hover:bg-red-500/30"
@@ -464,21 +503,22 @@ export default function ProfileModal({ profile, onClose }: Props) {
 
                 <Field label="Battery Status">
                   <div className="grid grid-cols-3 gap-2">
-                    <select
+                    <Select
                       value={fingerprint.battery?.charging ? 'true' : 'false'}
-                      onChange={(e) => {
-                        const charging = e.target.value === 'true'
+                      onChange={(value) => {
+                        const charging = value === 'true'
                         setFingerprint(f => ({
                           ...f,
                           battery: { charging, level: f.battery?.level || 0.8, chargingTime: Infinity, dischargingTime: 3600 }
                         }))
                       }}
-                      className="input-field"
-                    >
-                      <option value="">Default</option>
-                      <option value="true">Charging</option>
-                      <option value="false">Not Charging</option>
-                    </select>
+                      options={[
+                        { value: '', label: 'Default' },
+                        { value: 'true', label: 'Charging' },
+                        { value: 'false', label: 'Not Charging' }
+                      ]}
+                      placeholder="Default"
+                    />
                     <input
                       type="number"
                       placeholder="Level (0-1)"
@@ -555,21 +595,24 @@ export default function ProfileModal({ profile, onClose }: Props) {
         </div>
 
         {/* Footer */}
-        <div className="flex items-center justify-between px-6 py-4 border-t border-white/5">
+        <div className="flex items-center justify-between border-t border-[#1F2230] px-6 py-4">
           <button
             onClick={() => setShowSaveTemplate(true)}
-            className="px-4 py-2 text-sm text-purple-400 hover:text-purple-300 rounded-lg hover:bg-purple-500/10 transition-all"
+            className="rounded-lg px-4 py-2 text-sm font-medium text-[#9CA3AF] hover:bg-[#1F2230] hover:text-[#E5E7EB] transition-colors"
           >
-            💾 Lưu làm Template
+            Lưu làm Template
           </button>
           <div className="flex gap-3">
-            <button onClick={onClose} className="px-4 py-2 text-sm text-slate-400 hover:text-white rounded-lg hover:bg-white/5 transition-all">
+            <button 
+              onClick={onClose} 
+              className="rounded-lg border border-[#1F2230] bg-[#0B0B0F] px-4 py-2 text-sm font-medium text-[#9CA3AF] hover:bg-[#1F2230] hover:text-[#E5E7EB] transition-colors"
+            >
               Hủy
             </button>
             <button
               onClick={handleSave}
               disabled={saving || !name.trim()}
-              className="btn-primary text-white text-sm font-medium px-5 py-2 rounded-lg disabled:opacity-50 disabled:cursor-not-allowed"
+              className="rounded-lg bg-[#7C3AED] px-5 py-2 text-sm font-medium text-white hover:bg-[#8B5CF6] disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
             >
               {saving ? 'Đang lưu...' : isEdit ? 'Cập nhật' : 'Tạo hồ sơ'}
             </button>
@@ -633,7 +676,7 @@ export default function ProfileModal({ profile, onClose }: Props) {
 function Field({ label, children }: { label: string; children: React.ReactNode }) {
   return (
     <div>
-      <label className="block text-xs font-medium text-slate-400 mb-1.5">{label}</label>
+      <label className="block text-xs font-medium text-[#9CA3AF] mb-1.5">{label}</label>
       {children}
     </div>
   )

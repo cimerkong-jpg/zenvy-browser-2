@@ -7,3 +7,12 @@ dist/
 .claude/settings.local.json
 .claude/CLAUDE.local.md
 .codex/logs/
+
+# Environment variables (QUAN TRỌNG - BẢO MẬT)
+.env
+.env.*
+!.env.example
+
+# Build outputs
+*.dmg
+*.zip

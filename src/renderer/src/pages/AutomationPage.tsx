@@ -7,6 +7,7 @@ import ScriptEditor from '../components/ScriptEditor'
 import ActionLibrary from '../components/ActionLibrary'
 import EditorEmptyState from '../components/EditorEmptyState'
 import { useKeyboardShortcuts } from '../hooks/useKeyboardShortcuts'
+import Select from '../components/ui/Select'
 
 // ── Templates ─────────────────────────────────────────────────────────────────
 
@@ -1003,7 +1004,7 @@ export default function AutomationPage({ subPage }: { subPage: AutoSub }) {
           </div>
 
           {/* Panel R: Run & log */}
-          <div className="flex w-[268px] shrink-0 flex-col border-l border-white/[0.06] bg-[#0A0817] overflow-hidden">
+          <div className="flex w-[420px] shrink-0 flex-col border-l border-white/[0.06] bg-[#0A0817] overflow-hidden">
 
             {/* Profile selector */}
             <div className="shrink-0 border-b border-white/[0.06] p-3 space-y-2.5">
@@ -1185,19 +1186,26 @@ export default function AutomationPage({ subPage }: { subPage: AutoSub }) {
                 <div className="grid grid-cols-2 gap-4">
                   <div>
                     <label className="mb-1.5 block text-[11px] text-slate-600">Script</label>
-                    <select value={schedScriptId} onChange={(e) => setSchedScriptId(e.target.value)}
-                      className="w-full rounded-lg border border-white/[0.07] bg-white/[0.03] px-3 py-2 text-xs text-white focus:outline-none focus:border-purple-500/30">
-                      <option value="" className="bg-[#13111F]">-- Chọn script --</option>
-                      {scripts.map((s) => <option key={s.id} value={s.id} className="bg-[#13111F]">{s.name}</option>)}
-                    </select>
+                    <Select
+                      value={schedScriptId}
+                      onChange={setSchedScriptId}
+                      options={[
+                        { value: '', label: '-- Chọn script --' },
+                        ...scripts.map(s => ({ value: s.id, label: s.name }))
+                      ]}
+                      placeholder="-- Chọn script --"
+                    />
                   </div>
                   <div>
                     <label className="mb-1.5 block text-[11px] text-slate-600">Loại lịch</label>
-                    <select value={schedType} onChange={(e) => setSchedType(e.target.value as 'once' | 'interval')}
-                      className="w-full rounded-lg border border-white/[0.07] bg-white/[0.03] px-3 py-2 text-xs text-white focus:outline-none focus:border-purple-500/30">
-                      <option value="interval" className="bg-[#13111F]">Lặp lại</option>
-                      <option value="once" className="bg-[#13111F]">Một lần</option>
-                    </select>
+                    <Select
+                      value={schedType}
+                      onChange={(value) => setSchedType(value as 'once' | 'interval')}
+                      options={[
+                        { value: 'interval', label: 'Lặp lại' },
+                        { value: 'once', label: 'Một lần' }
+                      ]}
+                    />
                   </div>
                 </div>
 

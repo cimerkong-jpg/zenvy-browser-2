@@ -7,15 +7,53 @@ function getSettingsPath(): string {
   return join(app.getPath('userData'), 'zenvy-settings.json')
 }
 
+/**
+ * Auto-detect Chrome path on user's system
+ * Tries multiple common locations and returns the first one that exists
+ */
 export function detectChromePath(): string {
+  console.log('[Settings] Auto-detecting Chrome path...')
+  
+  let possiblePaths: string[] = []
+  
   switch (process.platform) {
     case 'darwin':
-      return '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome'
+      possiblePaths = [
+        '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome',
+        '/Applications/Chromium.app/Contents/MacOS/Chromium',
+        join(process.env.HOME || '', 'Applications/Google Chrome.app/Contents/MacOS/Google Chrome'),
+      ]
+      break
     case 'win32':
-      return 'C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe'
-    default:
-      return '/usr/bin/google-chrome'
+      possiblePaths = [
+        'C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe',
+        'C:\\Program Files (x86)\\Google\\Chrome\\Application\\chrome.exe',
+        join(process.env.LOCALAPPDATA || '', 'Google\\Chrome\\Application\\chrome.exe'),
+        join(process.env.PROGRAMFILES || '', 'Google\\Chrome\\Application\\chrome.exe'),
+      ]
+      break
+    default: // Linux
+      possiblePaths = [
+        '/usr/bin/google-chrome',
+        '/usr/bin/google-chrome-stable',
+        '/usr/bin/chromium',
+        '/usr/bin/chromium-browser',
+        '/snap/bin/chromium',
+      ]
+      break
   }
+  
+  // Find first path that exists
+  for (const path of possiblePaths) {
+    if (existsSync(path)) {
+      console.log('[Settings] Chrome found at:', path)
+      return path
+    }
+  }
+  
+  console.warn('[Settings] Chrome not found in common locations')
+  // Return default path even if not exists (user can select manually)
+  return possiblePaths[0]
 }
 
 const defaults: AppSettings = {

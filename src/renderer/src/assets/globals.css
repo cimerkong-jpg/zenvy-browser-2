@@ -405,39 +405,36 @@ body {
   -webkit-app-region: no-drag;
 }
 
-/* Enhanced Input field with 3D depth */
+/* Input field - consistent with Select component */
 .input-field {
   width: 100%;
-  background: rgba(255, 255, 255, 0.05);
-  border: 1px solid rgba(255, 255, 255, 0.1);
-  border-radius: 10px;
-  padding: 8px 12px;
-  color: #F8FAFC;
-  font-size: 13px;
+  background: #111218;
+  border: 1px solid #1F2230;
+  border-radius: 0.5rem;
+  padding: 0.625rem 0.75rem;
+  color: #E5E7EB;
+  font-size: 0.875rem;
+  line-height: 1.25rem;
   outline: none;
-  box-shadow: 
-    inset 0 2px 4px rgba(0, 0, 0, 0.2),
-    0 1px 2px rgba(0, 0, 0, 0.1);
-  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+  transition: all 0.2s ease;
 }
 
 .input-field:hover {
-  border-color: rgba(139, 92, 246, 0.2);
-  background: rgba(255, 255, 255, 0.06);
+  border-color: #374151;
 }
 
 .input-field:focus {
-  border-color: rgba(139, 92, 246, 0.5);
-  background: rgba(255, 255, 255, 0.07);
-  box-shadow: 
-    inset 0 2px 4px rgba(0, 0, 0, 0.2),
-    0 0 0 3px rgba(139, 92, 246, 0.1),
-    0 2px 8px rgba(139, 92, 246, 0.2);
+  border-color: #7C3AED;
+  background: #111218;
+}
+
+.input-field::placeholder {
+  color: #6B7280;
 }
 
 .input-field option {
-  background: #1A1728;
-  color: #F8FAFC;
+  background: #111218;
+  color: #E5E7EB;
 }
 
 /* Utility: Purple glow shadow */

@@ -1,9 +1,11 @@
 import { useState } from 'react'
-import type { Profile } from '../../../shared/types'
+import type { Profile, Group } from '../../../shared/types'
+import Select from './ui/Select'
 
 interface QuickEditProfileModalProps {
   profile: Profile
-  field: 'name' | 'notes'
+  field: 'name' | 'notes' | 'group'
+  groups?: Group[]
   onClose: () => void
   onSave: (profileId: string, updates: Partial<Profile>) => Promise<void>
 }
@@ -11,14 +13,27 @@ interface QuickEditProfileModalProps {
 export default function QuickEditProfileModal({
   profile,
   field,
+  groups = [],
   onClose,
   onSave
 }: QuickEditProfileModalProps) {
-  const [value, setValue] = useState(field === 'name' ? profile.name : profile.notes)
+  const [value, setValue] = useState(
+    field === 'name' ? profile.name : 
+    field === 'notes' ? profile.notes : 
+    profile.groupId || ''
+  )
   const [saving, setSaving] = useState(false)
 
-  const title = field === 'name' ? 'Cập nhật tên' : 'Cập nhật ghi chú'
-  const label = field === 'name' ? 'Tên hồ sơ' : 'Ghi chú'
+  const title = 
+    field === 'name' ? 'Cập nhật tên' : 
+    field === 'notes' ? 'Cập nhật ghi chú' : 
+    'Chuyển nhóm'
+  
+  const label = 
+    field === 'name' ? 'Tên hồ sơ' : 
+    field === 'notes' ? 'Ghi chú' : 
+    'Nhóm'
+  
   const isValid = field === 'name' ? value.trim().length > 0 : true
 
   const handleSave = async () => {
@@ -26,9 +41,10 @@ export default function QuickEditProfileModal({
     
     setSaving(true)
     try {
-      const updates = field === 'name' 
-        ? { name: value.trim() }
-        : { notes: value }
+      const updates = 
+        field === 'name' ? { name: value.trim() } :
+        field === 'notes' ? { notes: value } :
+        { groupId: value || null }
       
       await onSave(profile.id, updates)
       onClose()
@@ -80,15 +96,26 @@ export default function QuickEditProfileModal({
               autoFocus
               className="input-field"
             />
-          ) : (
+          ) : field === 'notes' ? (
             <textarea
               value={value}
               onChange={(e) => setValue(e.target.value)}
               onKeyDown={handleKeyDown}
-              rows={4}
+              rows={3}
               placeholder="Thông tin tài khoản, mật khẩu, ghi chú..."
               autoFocus
               className="input-field resize-none"
+            />
+          ) : (
+            <Select
+              value={value}
+              onChange={setValue}
+              options={[
+                { value: '', label: 'Không có nhóm' },
+                ...groups.map(g => ({ value: g.id, label: g.name }))
+              ]}
+              placeholder="Chọn nhóm"
+              className="w-full"
             />
           )}
         </div>

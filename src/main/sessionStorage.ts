@@ -1,6 +1,7 @@
 import { existsSync, readFileSync, writeFileSync, mkdirSync, unlinkSync } from 'fs'
 import { join } from 'path'
 import { createCipheriv, createDecipheriv, randomBytes } from 'crypto'
+import { app } from 'electron'
 
 interface SessionData {
   access_token: string

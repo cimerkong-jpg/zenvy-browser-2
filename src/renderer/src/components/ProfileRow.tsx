@@ -11,7 +11,7 @@ interface Props {
   isRunning: boolean
   isSelected: boolean
   onEdit: (profile: Profile) => void
-  onQuickEdit?: (profile: Profile, field: 'name' | 'notes') => void
+  onQuickEdit?: (profile: Profile, field: 'name' | 'notes' | 'group') => void
 }
 
 export default function ProfileRow({
@@ -157,13 +157,29 @@ export default function ProfileRow({
 
         {/* Group */}
         <td className="px-4 py-3">
-          {group ? (
-            <span className="inline-flex items-center rounded-full bg-[#1F2230] px-2 py-0.5 text-xs text-[#9CA3AF]">
-              {group.name}
-            </span>
-          ) : (
-            <span className="text-xs text-[#6B7280]">—</span>
-          )}
+          <div className="flex items-center gap-2">
+            {group ? (
+              <span className="inline-flex items-center rounded-full bg-[#1F2230] px-2 py-0.5 text-xs text-[#9CA3AF]">
+                {group.name}
+              </span>
+            ) : (
+              <span className="text-xs text-[#6B7280]">—</span>
+            )}
+            {onQuickEdit && (
+              <button
+                onClick={(e) => {
+                  e.stopPropagation()
+                  onQuickEdit(profile, 'group')
+                }}
+                className="opacity-0 group-hover/row:opacity-100 flex h-5 w-5 flex-shrink-0 items-center justify-center rounded text-[#6B7280] hover:text-[#E5E7EB] hover:bg-[#1F2230] transition-all"
+                title="Quick edit group"
+              >
+                <svg className="h-3 w-3" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z" />
+                </svg>
+              </button>
+            )}
+          </div>
         </td>
 
         {/* Notes */}

@@ -539,14 +539,14 @@ function LogStream({ executions, activeIdx, onSelect }: {
           title="Xóa logs"
           className="p-1 text-slate-700 hover:text-red-400 transition-colors"
         >
-          🗑️
+          <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" /></svg>
         </button>
         <button
           onClick={exportLogs}
           title="Export logs"
           className="p-1 text-slate-700 hover:text-purple-400 transition-colors"
         >
-          💾
+          <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" /></svg>
         </button>
       </div>
 
@@ -787,6 +787,18 @@ export default function AutomationPage({ subPage }: { subPage: AutoSub }) {
   return (
     <div className="flex flex-1 flex-col min-h-0 overflow-hidden">
 
+
+      {/* Page Header */}
+      <div className="drag-region h-8 flex-shrink-0" />
+      <div className="no-drag border-b border-[#1F2230] px-6 py-4">
+        <div>
+          <h1 className="text-xl font-semibold text-[#E5E7EB]">Automation</h1>
+          <p className="mt-0.5 text-sm text-[#6B7280]">
+            Tạo và chạy quy trình tự động hóa
+          </p>
+        </div>
+      </div>
+
       {/* ══════════════════════════════════════════════════════════════════════
           SCRIPTS — Card grid view
       ══════════════════════════════════════════════════════════════════════ */}
@@ -809,7 +821,7 @@ export default function AutomationPage({ subPage }: { subPage: AutoSub }) {
               </div>
               <button
                 onClick={() => openNew()}
-                className="flex items-center gap-2 rounded-lg bg-purple-600 px-4 py-1.5 text-xs font-semibold text-white hover:bg-purple-500 transition-colors"
+                className="flex items-center gap-2 rounded-lg bg-[#7C3AED] px-4 py-1.5 text-xs font-semibold text-white hover:bg-[#8B5CF6] transition-colors"
               >
                 <span>+</span> Thêm quy trình mới
               </button>
@@ -960,7 +972,7 @@ export default function AutomationPage({ subPage }: { subPage: AutoSub }) {
                     <button
                       onClick={saveScript}
                       title="Lưu (Ctrl+S)"
-                      className="rounded-lg bg-purple-600 px-3.5 py-1.5 text-xs font-semibold text-white hover:bg-purple-500 transition-colors"
+                      className="rounded-lg bg-[#7C3AED] px-3.5 py-1.5 text-xs font-semibold text-white hover:bg-[#8B5CF6] transition-colors"
                     >
                       Lưu
                     </button>
@@ -1114,14 +1126,14 @@ export default function AutomationPage({ subPage }: { subPage: AutoSub }) {
                       onKeyDown={(e) => { if (e.key === 'Enter') { if (newKey.trim()) { setVarsOverride((v) => ({ ...v, [newKey.trim()]: newVal })); setNewKey(''); setNewVal('') } } }}
                       className="flex-1 rounded border border-white/[0.05] bg-black/30 px-2 py-1 text-[10px] text-white placeholder:text-slate-700 focus:outline-none" />
                     <button onClick={() => { if (newKey.trim()) { setVarsOverride((v) => ({ ...v, [newKey.trim()]: newVal })); setNewKey(''); setNewVal('') } }}
-                      className="rounded bg-purple-600/50 px-2 py-1 text-[10px] text-white hover:bg-purple-600/70">+</button>
+                      className="rounded bg-[#7C3AED]/50 px-2 py-1 text-[10px] text-white hover:bg-[#7C3AED]/70">+</button>
                   </div>
                   {selectedProfileIds.length === 1 && Object.keys(varsOverride).length > 0 && (
                     <button
                       onClick={() => saveVars(selectedProfileIds[0])}
-                      className="w-full mt-1 px-2 py-1.5 rounded-lg text-[10px] font-medium bg-purple-500/10 text-purple-400 border border-purple-500/20 hover:bg-purple-500/20 transition-colors"
+                      className="w-full mt-1 px-2 py-1.5 rounded-lg text-[10px] font-medium bg-purple-500/10 text-purple-400 border border-purple-500/20 hover:bg-[#8B5CF6]/20 transition-colors"
                     >
-                      💾 Lưu vào profile
+                      <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" /></svg> Lưu vào profile
                     </button>
                   )}
                 </div>
@@ -1134,7 +1146,7 @@ export default function AutomationPage({ subPage }: { subPage: AutoSub }) {
                 onClick={run}
                 disabled={isRunning || !selected || !selectedProfileIds.length}
                 title="Chạy script (Ctrl+Enter)"
-                className="flex w-full items-center justify-center gap-2 rounded-xl bg-gradient-to-r from-emerald-600 to-teal-600 py-3 text-sm font-bold text-white transition-all hover:opacity-90 disabled:opacity-25 disabled:cursor-not-allowed shadow-lg shadow-emerald-900/20"
+                className="flex w-full items-center justify-center gap-2 rounded-xl bg-[#7C3AED] py-3 text-sm font-bold text-white transition-all hover:opacity-90 disabled:opacity-25 disabled:cursor-not-allowed "
               >
                 {isRunning
                   ? <><span className="animate-spin">↻</span> Đang chạy...</>
@@ -1175,7 +1187,7 @@ export default function AutomationPage({ subPage }: { subPage: AutoSub }) {
                 <p className="mt-0.5 text-xs text-slate-600">Script sẽ chạy kể cả khi không mở trang Automation</p>
               </div>
               <button onClick={() => setShowSchedForm((v) => !v)}
-                className="rounded-lg bg-purple-600 px-4 py-2 text-xs font-semibold text-white hover:bg-purple-500 transition-colors"
+                className="rounded-lg bg-[#7C3AED] px-4 py-2 text-xs font-semibold text-white hover:bg-[#8B5CF6] transition-colors"
               >+ Tạo lịch</button>
             </div>
 
@@ -1245,7 +1257,7 @@ export default function AutomationPage({ subPage }: { subPage: AutoSub }) {
                 </div>
 
                 <div className="flex gap-2">
-                  <button onClick={createSchedule} className="rounded-lg bg-purple-600 px-5 py-2 text-xs font-semibold text-white hover:bg-purple-500 transition-colors">Tạo lịch</button>
+                  <button onClick={createSchedule} className="rounded-lg bg-[#7C3AED] px-5 py-2 text-xs font-semibold text-white hover:bg-[#8B5CF6] transition-colors">Tạo lịch</button>
                   <button onClick={() => setShowSchedForm(false)} className="rounded-lg border border-white/[0.08] px-4 py-2 text-xs text-slate-500 hover:bg-white/[0.04] transition-colors">Hủy</button>
                 </div>
               </div>
@@ -1280,7 +1292,7 @@ export default function AutomationPage({ subPage }: { subPage: AutoSub }) {
                   </div>
                   <div className="flex shrink-0 items-center gap-2">
                     <button onClick={async () => { await window.api.scheduler.toggle(task.id, !task.enabled); loadTasks() }}
-                      className={`rounded-lg px-3 py-1.5 text-xs font-medium transition-colors ${task.enabled ? 'border border-white/[0.08] text-slate-500 hover:bg-white/[0.04]' : 'bg-purple-600/70 text-white hover:bg-purple-600'}`}
+                      className={`rounded-lg px-3 py-1.5 text-xs font-medium transition-colors ${task.enabled ? 'border border-white/[0.08] text-slate-500 hover:bg-white/[0.04]' : 'bg-[#7C3AED]/70 text-white hover:bg-[#7C3AED]'}`}
                     >{task.enabled ? 'Tắt' : 'Bật'}</button>
                     <button onClick={() => dialog.confirm('Xóa lịch', `Xóa lịch chạy "${task.scriptName}"?`, async () => { await window.api.scheduler.delete(task.id); loadTasks() })}
                       className="rounded-lg border border-white/[0.06] p-1.5 text-slate-700 hover:border-red-500/20 hover:text-red-400 transition-colors"
@@ -1440,7 +1452,7 @@ function ScriptCard({ script, execStatus, onOpen, onDelete }: {
           >Xóa</button>
           <button
             onClick={(e) => { e.stopPropagation(); onOpen() }}
-            className="rounded-md bg-purple-600/70 px-2.5 py-1 text-[10px] font-semibold text-white hover:bg-purple-600 transition-colors"
+            className="rounded-md bg-[#7C3AED]/70 px-2.5 py-1 text-[10px] font-semibold text-white hover:bg-[#7C3AED] transition-colors"
           >Mở →</button>
         </div>
       </div>
@@ -1455,7 +1467,7 @@ function TemplateCard({ tpl, onClick }: { tpl: ScriptTemplate; onClick: () => vo
       onClick={onClick}
     >
       <div className="flex items-start justify-between mb-3">
-        <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-white/[0.04] border border-white/[0.06] text-xl group-hover:bg-purple-500/10 group-hover:border-purple-500/15 transition-all">
+        <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-white/[0.04] border border-white/[0.06] text-xl group-hover:bg-[#8B5CF6]/10 group-hover:border-purple-500/15 transition-all">
           {tpl.icon}
         </div>
         <span className="rounded-full border border-white/[0.08] px-2 py-0.5 text-[10px] text-slate-600 group-hover:border-purple-500/20 group-hover:text-purple-400 transition-colors">Mẫu</span>
@@ -1477,7 +1489,7 @@ function EmptyState({ onNew }: { onNew: () => void }) {
         <p className="text-sm font-medium text-slate-500">Chưa có quy trình nào</p>
         <p className="text-xs text-slate-700">Tạo script mới hoặc chọn mẫu bên trái</p>
       </div>
-      <button onClick={onNew} className="rounded-lg bg-purple-600 px-5 py-2.5 text-xs font-semibold text-white hover:bg-purple-500 transition-colors">+ Thêm quy trình mới</button>
+      <button onClick={onNew} className="rounded-lg bg-[#7C3AED] px-5 py-2.5 text-xs font-semibold text-white hover:bg-[#8B5CF6] transition-colors">+ Thêm quy trình mới</button>
     </div>
   )
 }

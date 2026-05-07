@@ -57,10 +57,10 @@ export default function ProfilesPage() {
   const [deletingGroup, setDeletingGroup] = useState<{ id: string; name: string } | null>(null)
 
   // Quick edit state
-  const [quickEditProfile, setQuickEditProfile] = useState<{ profile: Profile; field: 'name' | 'notes' } | null>(null)
+  const [quickEditProfile, setQuickEditProfile] = useState<{ profile: Profile; field: 'name' | 'notes' | 'group' } | null>(null)
 
   // Quick edit handler
-  const handleQuickEdit = (profile: Profile, field: 'name' | 'notes') => {
+  const handleQuickEdit = (profile: Profile, field: 'name' | 'notes' | 'group') => {
     setQuickEditProfile({ profile, field })
   }
 
@@ -502,6 +502,7 @@ export default function ProfilesPage() {
           <QuickEditProfileModal
             profile={quickEditProfile.profile}
             field={quickEditProfile.field}
+            groups={groups}
             onClose={() => setQuickEditProfile(null)}
             onSave={handleQuickEditSave}
           />

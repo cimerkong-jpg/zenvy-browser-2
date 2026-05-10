@@ -2,6 +2,10 @@
 @import 'tailwindcss/components';
 @import 'tailwindcss/utilities';
 
+.field {
+  @apply w-full rounded-lg border border-[#1F2230] bg-[#111218] px-4 py-2 text-sm text-white outline-none placeholder:text-slate-500 focus:border-[#7C3AED];
+}
+
 /* CSS Variables for theming */
 :root {
   /* Dark theme (default) */

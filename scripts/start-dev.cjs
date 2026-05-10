@@ -1,5 +1,5 @@
 const { spawn } = require('child_process')
-const { join } = require('path')
+const { isAbsolute, join } = require('path')
 
 const root = join(__dirname, '..')
 const rendererUrl = 'http://127.0.0.1:5173'
@@ -14,7 +14,7 @@ async function buildMainProcess() {
   const { build } = await import('vite')
 
   // Externalize all node_modules so Node.js requires them at runtime
-  const externalAll = (id) => !id.startsWith('.') && !id.startsWith('/') && !id.startsWith('\0')
+  const externalAll = (id) => !id.startsWith('.') && !isAbsolute(id) && !id.startsWith('\0')
 
   await build({
     configFile: false,

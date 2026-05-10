@@ -1,4 +1,5 @@
 import { create } from 'zustand'
+import { useWorkspace } from './useWorkspace'
 
 interface AuthUser {
   id: string
@@ -160,6 +161,7 @@ export const useAuth = create<AuthStore>((set) => ({
         isLoading: false,
         error: null
       })
+      useWorkspace.getState().reset()
     } catch (err) {
       console.error('Failed to sign out:', err)
       // Clear local state anyway
@@ -169,6 +171,7 @@ export const useAuth = create<AuthStore>((set) => ({
         isLoading: false,
         error: null
       })
+      useWorkspace.getState().reset()
     }
   },
 

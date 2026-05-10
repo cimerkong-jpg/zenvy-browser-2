@@ -5,11 +5,20 @@ import { readFileSync, writeFileSync, existsSync } from 'fs'
 import type { Profile } from '../shared/types'
 import { getFontsByOS } from './fingerprints/fonts'
 import { getSettings } from './appSettings'
+import { ensureChromeInstalled, getDownloadedChromePath } from './browserInstaller'
+import { getCurrentWorkspaceId } from './workspaces'
 
 const runningProfiles = new Map<string, { process: ChildProcess; pid?: number }>()
 
 // Track profiles opened by Puppeteer automation — stores Browser instance to allow closing
 const automationProfiles = new Map<string, { close: () => Promise<void> }>()
+
+function getProfileRuntimeDir(profileId: string, workspaceId?: string | null): string {
+  const scope = workspaceId || getCurrentWorkspaceId()
+  return scope
+    ? join(app.getPath('userData'), 'workspaces', scope, 'profiles', profileId)
+    : join(app.getPath('userData'), 'profiles', profileId)
+}
 
 // Helper to promisify exec
 function execAsync(command: string): Promise<{ stdout: string; stderr: string }> {
@@ -51,6 +60,21 @@ function getChromePath(): string {
     }
     throw new Error('❌ Không thể lấy đường dẫn Chrome.\n\n📍 Cách fix: Vào Settings và chọn lại Chrome')
   }
+}
+
+async function getManagedChromePath(profileId?: string): Promise<string> {
+  const settings = getSettings()
+
+  if (settings?.chromePath && existsSync(settings.chromePath)) {
+    return settings.chromePath
+  }
+
+  const downloadedPath = await getDownloadedChromePath()
+  if (downloadedPath) {
+    return downloadedPath
+  }
+
+  return ensureChromeInstalled(profileId)
 }
 
 function injectSpoofScripts(profile: Profile, testPagePath: string): string {
@@ -145,8 +169,8 @@ function injectSpoofScripts(profile: Profile, testPagePath: string): string {
       htmlContent = htmlContent.replace('<script src="webrtc-inject.js"></script>', injectedScripts)
     }
 
-    const tempPath = join(app.getPath('userData'), 'profiles', profile.id, 'test-page.html')
-    const tempDir = join(app.getPath('userData'), 'profiles', profile.id)
+    const tempDir = getProfileRuntimeDir(profile.id, profile.workspaceId)
+    const tempPath = join(tempDir, 'test-page.html')
     
     try {
       if (!existsSync(tempDir)) {
@@ -241,7 +265,7 @@ export function unregisterAutomationProfile(profileId: string): void {
   }
 }
 
-export function launchProfile(profile: Profile): { success: boolean; error?: string } {
+export async function launchProfile(profile: Profile): Promise<{ success: boolean; error?: string }> {
   console.log('[Browser] Launching profile:', profile.id, profile.name)
   
   // Check if profile is already running
@@ -253,7 +277,7 @@ export function launchProfile(profile: Profile): { success: boolean; error?: str
   // Get Chrome path with error handling
   let chromePath: string
   try {
-    chromePath = getChromePath()
+    chromePath = await getManagedChromePath(profile.id)
     console.log('[Browser] Chrome path:', chromePath)
   } catch (error) {
     console.error('[Browser] Failed to get Chrome path:', error)
@@ -266,7 +290,7 @@ export function launchProfile(profile: Profile): { success: boolean; error?: str
     return { success: false, error: 'Chrome không tồn tại tại đường dẫn đã cấu hình. Vui lòng kiểm tra Settings.' }
   }
 
-  const userDataDir = join(app.getPath('userData'), 'profiles', profile.id)
+  const userDataDir = getProfileRuntimeDir(profile.id, profile.workspaceId)
   console.log('[Browser] User data dir:', userDataDir)
 
   // Try multiple paths to find test page (NO hardcoded paths)
@@ -382,7 +406,7 @@ export function getRunningProfiles(): string[] {
 
 // Check if a Chrome process with specific user-data-dir is actually running
 async function isProfileActuallyRunning(profileId: string): Promise<boolean> {
-  const userDataDir = join(app.getPath('userData'), 'profiles', profileId)
+  const userDataDir = getProfileRuntimeDir(profileId)
   
   try {
     if (process.platform === 'darwin') {

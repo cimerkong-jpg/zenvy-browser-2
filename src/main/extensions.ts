@@ -2,9 +2,13 @@ import { app } from 'electron'
 import { existsSync, readFileSync, writeFileSync, readdirSync, cpSync } from 'fs'
 import { join } from 'path'
 import type { ExtensionInfo } from '../shared/types'
+import { getCurrentWorkspaceId } from './workspaces'
 
 function getProfileUserDataDir(profileId: string): string {
-  return join(app.getPath('userData'), 'profiles', profileId)
+  const workspaceId = getCurrentWorkspaceId()
+  return workspaceId
+    ? join(app.getPath('userData'), 'workspaces', workspaceId, 'profiles', profileId)
+    : join(app.getPath('userData'), 'profiles', profileId)
 }
 
 function getExtDir(profileId: string): string {

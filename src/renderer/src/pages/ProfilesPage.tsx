@@ -2,6 +2,9 @@ import { useMemo, useState, useEffect, useRef } from 'react'
 import { createPortal } from 'react-dom'
 import type { ReactNode } from 'react'
 import { useStore } from '../store/useStore'
+import { useAuth } from '../store/useAuth'
+import { useWorkspace } from '../store/useWorkspace'
+import WorkspaceSwitcher from '../components/WorkspaceSwitcher'
 import ProfileModal from '../components/ProfileModal'
 import ProfileRow from '../components/ProfileRow'
 import QuickEditProfileModal from '../components/QuickEditProfileModal'
@@ -35,12 +38,15 @@ export default function ProfilesPage() {
     setSearchQuery,
     loadAll
   } = useStore()
+  const { user, signOut } = useAuth()
+  const { hasPermission } = useWorkspace()
 
   const [editProfile, setEditProfile] = useState<Profile | null>(null)
   const [showCreate, setShowCreate] = useState(false)
   const [statusFilter, setStatusFilter] = useState<StatusFilter>('all')
   const [sortBy, setSortBy] = useState<SortBy>('default')
   const [showSortMenu, setShowSortMenu] = useState(false)
+  const [showAccountMenu, setShowAccountMenu] = useState(false)
   const [sortMenuPos, setSortMenuPos] = useState({ x: 0, y: 0 })
   const [importData, setImportData] = useState<{ profiles: any[]; rawText: string } | null>(null)
   const sortRef = useRef<HTMLButtonElement>(null)
@@ -61,6 +67,7 @@ export default function ProfilesPage() {
 
   // Quick edit handler
   const handleQuickEdit = (profile: Profile, field: 'name' | 'notes' | 'group') => {
+    if (!hasPermission('profile.edit')) return
     setQuickEditProfile({ profile, field })
   }
 
@@ -94,14 +101,15 @@ export default function ProfilesPage() {
 
     const sorted = [...base]
     switch (sortBy) {
+      case 'default':
+        // Default: Sort by newest first (createdAt descending)
+        sorted.sort((a, b) => b.createdAt - a.createdAt)
+        break
       case 'name-asc':
         sorted.sort((a, b) => a.name.localeCompare(b.name, 'vi'))
         break
       case 'name-desc':
         sorted.sort((a, b) => b.name.localeCompare(a.name, 'vi'))
-        break
-      case 'created-newest':
-        sorted.sort((a, b) => b.createdAt - a.createdAt)
         break
       case 'created-oldest':
         sorted.sort((a, b) => a.createdAt - b.createdAt)
@@ -127,22 +135,26 @@ export default function ProfilesPage() {
 
   // Group handlers
   const handleCreateGroup = async (name: string) => {
+    if (!hasPermission('group.create')) return
     await window.api.groups.create(name)
     await loadAll()
   }
 
   const handleUpdateGroup = async (groupId: string, newName: string) => {
+    if (!hasPermission('group.edit')) return
     await window.api.groups.update(groupId, { name: newName })
     await loadAll()
   }
 
   const handleDeleteGroup = async (groupId: string) => {
+    if (!hasPermission('group.delete')) return
     await window.api.groups.delete(groupId)
     if (selectedGroupId === groupId) setSelectedGroupId(null)
     await loadAll()
   }
 
   const deleteSelected = async () => {
+    if (!hasPermission('profile.delete')) return
     if (!selectedIds.length) return
     if (!confirm(`Xóa ${selectedIds.length} hồ sơ đã chọn?`)) return
     await window.api.profiles.deleteMany(selectedIds)
@@ -151,6 +163,7 @@ export default function ProfilesPage() {
   }
 
   const exportSelected = async () => {
+    if (!hasPermission('profile.export')) return
     if (!selectedIds.length) return
     const json = await window.api.profiles.export(selectedIds)
     const blob = new Blob([json], { type: 'application/json' })
@@ -163,6 +176,7 @@ export default function ProfilesPage() {
   }
 
   const moveSelectedToGroup = async () => {
+    if (!hasPermission('profile.edit')) return
     if (!selectedIds.length || !moveTargetGroupId) return
 
     const groupId = moveTargetGroupId === 'none' ? null : moveTargetGroupId
@@ -176,6 +190,7 @@ export default function ProfilesPage() {
   }
 
   const importProfiles = () => {
+    if (!hasPermission('profile.import')) return
     const input = document.createElement('input')
     input.type = 'file'
     input.accept = '.json'
@@ -210,8 +225,94 @@ export default function ProfilesPage() {
   }
 
   return (
-    <div className="flex h-full min-w-0">
-      <GroupPanel
+    <div className="flex h-full min-w-0 flex-col">
+      {/* Topbar */}
+      <div className="drag-region flex-shrink-0 h-12 border-b border-[#1F2230] bg-[#0B0B0F] flex items-center justify-between px-6">
+        <div className="no-drag flex items-center gap-6">
+          <WorkspaceSwitcher />
+          <nav className="flex items-center gap-1">
+            <button className="px-3 py-1.5 text-xs font-medium text-[#9CA3AF] hover:text-[#E5E7EB] hover:bg-white/5 rounded-md transition-all">
+              Cài Đặt Workspace
+            </button>
+            <button className="px-3 py-1.5 text-xs font-medium text-[#9CA3AF] hover:text-[#E5E7EB] hover:bg-white/5 rounded-md transition-all">
+              Nạp Tiền
+            </button>
+            <button className="px-3 py-1.5 text-xs font-medium text-[#9CA3AF] hover:text-[#E5E7EB] hover:bg-white/5 rounded-md transition-all">
+              Mua Gói
+            </button>
+            <button className="px-3 py-1.5 text-xs font-medium text-[#9CA3AF] hover:text-[#E5E7EB] hover:bg-white/5 rounded-md transition-all">
+              Kênh Hỗ Trợ
+            </button>
+            <button className="px-3 py-1.5 text-xs font-medium text-[#9CA3AF] hover:text-[#E5E7EB] hover:bg-white/5 rounded-md transition-all">
+              Tiếp Thị Liên Kết
+            </button>
+          </nav>
+        </div>
+
+        {/* Account Avatar */}
+        <div className="no-drag flex items-center gap-3">
+          {user && (
+            <div className="relative">
+              <button
+                onClick={() => setShowAccountMenu(!showAccountMenu)}
+                className="w-9 h-9 rounded-full bg-gradient-to-br from-[#7C3AED] to-[#A78BFA] flex items-center justify-center text-white font-bold text-sm hover:shadow-lg transition-all"
+              >
+                {user.email?.charAt(0).toUpperCase() || 'U'}
+              </button>
+
+              {/* Account Menu Dropdown */}
+              {showAccountMenu && createPortal(
+                <>
+                  <div 
+                    className="fixed inset-0 z-40" 
+                    onClick={() => setShowAccountMenu(false)}
+                  />
+                  <div className="fixed z-50 w-64 rounded-lg border border-[#1F2230] bg-[#1B2333] shadow-xl p-2"
+                    style={{
+                      top: '52px',
+                      right: '24px'
+                    }}
+                  >
+                    <div className="px-3 py-2 border-b border-[#1F2230] mb-2">
+                      <p className="text-[11px] text-[#6B7280]">Tài khoản</p>
+                      <p className="text-[13px] font-medium text-[#E5E7EB] truncate" title={user.email}>
+                        {user.email}
+                      </p>
+                    </div>
+                    <button
+                      onClick={() => {
+                        setShowAccountMenu(false)
+                        // Navigate to settings
+                      }}
+                      className="w-full rounded-md bg-[#1F2230] px-3 py-2 text-[12px] font-medium text-[#E5E7EB] hover:bg-[#2A2D3A] transition-all flex items-center gap-2 mb-2"
+                    >
+                      <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" />
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+                      </svg>
+                      Cài đặt tài khoản
+                    </button>
+                    <button
+                      onClick={async () => {
+                        setShowAccountMenu(false)
+                        await signOut()
+                      }}
+                      className="w-full rounded-md bg-red-500/10 border border-red-500/20 px-3 py-2 text-[12px] font-medium text-red-400 hover:bg-red-500/20 transition-all"
+                    >
+                      Đăng xuất
+                    </button>
+                  </div>
+                </>,
+                document.body
+              )}
+            </div>
+          )}
+        </div>
+      </div>
+
+      {/* Main Content Area */}
+      <div className="flex flex-1 min-h-0">
+        <GroupPanel
         groups={groups}
         selectedGroupId={selectedGroupId}
         setSelectedGroupId={setSelectedGroupId}
@@ -224,26 +325,26 @@ export default function ProfilesPage() {
         onDeleteGroup={(group) => setDeletingGroup(group)}
       />
 
-      <section className="flex min-w-0 flex-1 flex-col">
-        <div className="drag-region h-8 flex-shrink-0" />
-
-        {/* ── Header + Actions ── */}
-        <div className="no-drag border-b border-[#1F2230] px-6 py-4">
-          {/* Title + Primary Action */}
-          <div className="flex items-center justify-between mb-4">
-            <div>
-              <h1 className="text-xl font-semibold text-[#E5E7EB]">Profiles</h1>
-              <p className="mt-0.5 text-sm text-[#6B7280]">
-                {selectedGroup?.name ?? 'All'} · {filtered.length} {filtered.length === 1 ? 'profile' : 'profiles'}
-              </p>
+        <section className="flex min-w-0 flex-1 flex-col">
+          {/* ── Header + Actions ── */}
+          <div className="no-drag border-b border-[#1F2230] px-6 py-4">
+            {/* Title + Primary Action */}
+            <div className="flex items-center justify-between mb-4">
+              <div>
+                <h1 className="text-xl font-semibold text-[#E5E7EB]">Profiles</h1>
+                <p className="mt-0.5 text-sm text-[#6B7280]">
+                  {selectedGroup?.name ?? 'All'} · {filtered.length} {filtered.length === 1 ? 'profile' : 'profiles'}
+                </p>
+              </div>
+              <button
+                onClick={() => setShowCreate(true)}
+                disabled={!hasPermission('profile.create')}
+                className="rounded-lg bg-[#7C3AED] px-4 py-2 text-sm font-medium text-white hover:bg-[#8B5CF6] transition-colors"
+                title={!hasPermission('profile.create') ? 'Bạn không có quyền tạo profile' : undefined}
+              >
+                + New Profile
+              </button>
             </div>
-            <button
-              onClick={() => setShowCreate(true)}
-              className="rounded-lg bg-[#7C3AED] px-4 py-2 text-sm font-medium text-white hover:bg-[#8B5CF6] transition-colors"
-            >
-              + New Profile
-            </button>
-          </div>
 
           {/* Search + Filters + Actions */}
           <div className="flex items-center gap-3">
@@ -261,16 +362,18 @@ export default function ProfilesPage() {
             </div>
 
             {/* Status Filter */}
-            <Select
-              value={statusFilter}
-              onChange={(value) => setStatusFilter(value as StatusFilter)}
-              options={[
-                { value: 'all', label: 'All Status' },
-                { value: 'open', label: 'Open' },
-                { value: 'closed', label: 'Closed' }
-              ]}
-              className="h-9 w-[160px] flex-shrink-0"
-            />
+            <div className="w-[130px] flex-shrink-0">
+              <Select
+                value={statusFilter}
+                onChange={(value) => setStatusFilter(value as StatusFilter)}
+                options={[
+                  { value: 'all', label: 'All Status' },
+                  { value: 'open', label: 'Open' },
+                  { value: 'closed', label: 'Closed' }
+                ]}
+                className="h-9"
+              />
+            </div>
 
             {/* Sort */}
             <button
@@ -288,13 +391,16 @@ export default function ProfilesPage() {
                 }
                 setShowSortMenu(v => !v)
               }}
-              className={`h-9 w-[88px] flex-shrink-0 rounded-lg border px-3 text-sm font-medium transition-colors ${
+              className={`h-9 flex items-center gap-1.5 flex-shrink-0 rounded-lg border px-3 text-sm font-medium transition-colors ${
                 sortBy !== 'default'
                   ? 'border-[#7C3AED]/50 bg-[#7C3AED]/10 text-[#7C3AED]'
                   : 'border-[#1F2230] bg-[#111218] text-[#9CA3AF] hover:text-[#E5E7EB]'
               }`}
             >
-              {sortBy !== 'default' ? SORT_LABELS[sortBy] : 'Sort'}
+              <svg className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 4h13M3 8h9m-9 4h6m4 0l4-4m0 0l4 4m-4-4v12" />
+              </svg>
+              <span>{sortBy !== 'default' ? SORT_LABELS[sortBy] : 'Sort'}</span>
             </button>
 
             {/* Refresh */}
@@ -305,7 +411,7 @@ export default function ProfilesPage() {
                 setTimeout(() => setIsReloading(false), 500)
               }}
               disabled={isReloading}
-              className="h-9 w-9 flex items-center justify-center rounded-lg border border-[#1F2230] bg-[#111218] text-[#9CA3AF] hover:text-[#E5E7EB] disabled:opacity-50 transition-colors"
+              className="h-9 w-9 flex items-center justify-center flex-shrink-0 rounded-lg border border-[#1F2230] bg-[#111218] text-[#9CA3AF] hover:text-[#E5E7EB] disabled:opacity-50 transition-colors"
               title="Refresh"
             >
               {isReloading ? (
@@ -339,11 +445,13 @@ export default function ProfilesPage() {
                 {/* Open */}
                 <button
                   onClick={async () => {
+                    if (!hasPermission('profile.open')) return
                     const toOpen = selectedIds.filter(id => !runningIds.includes(id))
                     const profile = profiles.find(p => toOpen.includes(p.id))
                     if (profile) await window.api.browser.launch(profile)
                     useStore.getState().setRunningIds(await window.api.browser.running())
                   }}
+                  disabled={!hasPermission('profile.open')}
                   className="flex items-center gap-1.5 rounded-lg bg-[#7C3AED]/10 border border-[#7C3AED]/20 px-3 py-1.5 text-xs font-medium text-[#7C3AED] hover:bg-[#7C3AED]/20 transition-all"
                 >
                   <svg className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -372,6 +480,7 @@ export default function ProfilesPage() {
                 {/* Move */}
                 <button
                   onClick={() => { setMoveTargetGroupId(''); setShowMoveGroupModal(true) }}
+                  disabled={!hasPermission('profile.edit')}
                   className="flex items-center gap-1.5 rounded-lg border border-[#1F2230] bg-[#0B0B0F] px-3 py-1.5 text-xs font-medium text-[#9CA3AF] hover:bg-[#1F2230] hover:text-[#E5E7EB] transition-all"
                 >
                   <svg className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -383,6 +492,7 @@ export default function ProfilesPage() {
                 {/* Export */}
                 <button
                   onClick={exportSelected}
+                  disabled={!hasPermission('profile.export')}
                   className="flex items-center gap-1.5 rounded-lg border border-[#1F2230] bg-[#0B0B0F] px-3 py-1.5 text-xs font-medium text-[#9CA3AF] hover:bg-[#1F2230] hover:text-[#E5E7EB] transition-all"
                 >
                   <svg className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -394,6 +504,7 @@ export default function ProfilesPage() {
                 {/* Delete */}
                 <button
                   onClick={deleteSelected}
+                  disabled={!hasPermission('profile.delete')}
                   className="flex items-center gap-1.5 rounded-lg border border-red-500/20 bg-red-500/5 px-3 py-1.5 text-xs font-medium text-red-400 hover:bg-red-500/10 hover:border-red-500/30 transition-all"
                 >
                   <svg className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -477,6 +588,7 @@ export default function ProfilesPage() {
                         key={profile.id}
                         profile={profile}
                         groups={groups}
+                        allProfiles={profiles}
                         isRunning={runningIds.includes(profile.id)}
                         isSelected={selectedIds.includes(profile.id)}
                         onEdit={setEditProfile}
@@ -570,6 +682,7 @@ export default function ProfilesPage() {
           />
         )}
       </section>
+      </div>
     </div>
   )
 }
@@ -745,7 +858,7 @@ function GroupPanel({
       <div className="mb-4 flex items-center justify-between">
         <div>
           <h2 className="text-base font-semibold text-white">Nhóm hồ sơ</h2>
-          <p className="mt-1 text-xs text-slate-500">{groups.length + 2} nhóm</p>
+          <p className="mt-1 text-xs text-slate-500">{groups.length} nhóm</p>
         </div>
         <div className="flex items-center gap-2">
           <button
@@ -1138,10 +1251,9 @@ function SortMenu({
   onClose: () => void
 }) {
   const items: { value: SortBy; label: string }[] = [
-    { value: 'default', label: 'Mặc định' },
+    { value: 'default', label: 'Mặc định (Mới nhất)' },
     { value: 'name-asc', label: 'Tên A → Z' },
     { value: 'name-desc', label: 'Tên Z → A' },
-    { value: 'created-newest', label: 'Ngày tạo: Mới nhất' },
     { value: 'created-oldest', label: 'Ngày tạo: Cũ nhất' },
     { value: 'status', label: 'Đang mở lên đầu' },
   ]

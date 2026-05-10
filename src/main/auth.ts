@@ -20,6 +20,7 @@ export interface AuthSession {
  */
 export async function restoreSession(): Promise<AuthSession | null> {
   if (!isSupabaseConfigured()) {
+    console.log('[Auth] Supabase not configured, skipping session restore')
     return null
   }
 
@@ -32,11 +33,18 @@ export async function restoreSession(): Promise<AuthSession | null> {
   try {
     const supabase = getSupabase()
     
-    // Restore session in Supabase
-    const { data, error } = await supabase.auth.setSession({
+    // Add timeout to prevent hanging
+    const timeoutPromise = new Promise<never>((_, reject) => {
+      setTimeout(() => reject(new Error('Session restore timeout')), 5000)
+    })
+    
+    // Restore session in Supabase with timeout
+    const sessionPromise = supabase.auth.setSession({
       access_token: savedSession.access_token,
       refresh_token: savedSession.refresh_token,
     })
+
+    const { data, error } = await Promise.race([sessionPromise, timeoutPromise])
 
     if (error) {
       console.error('[Auth] Failed to restore session:', error.message)
@@ -236,15 +244,24 @@ export async function getCurrentSession(): Promise<AuthSession | null> {
  * Get current user (without full session)
  */
 export async function getCurrentUser(): Promise<AuthUser | null> {
-  // Try to restore session first
-  const session = await restoreSession()
-  if (session) {
-    return session.user
-  }
+  try {
+    // Try to restore session first with timeout
+    const session = await restoreSession()
+    if (session) {
+      return session.user
+    }
 
-  // If no saved session, check Supabase
-  const currentSession = await getCurrentSession()
-  return currentSession?.user || null
+    // If no saved session, check Supabase with timeout
+    const timeoutPromise = new Promise<null>((resolve) => {
+      setTimeout(() => resolve(null), 3000)
+    })
+    
+    const currentSession = await Promise.race([getCurrentSession(), timeoutPromise])
+    return currentSession?.user || null
+  } catch (err) {
+    console.error('[Auth] Error getting current user:', err)
+    return null
+  }
 }
 
 /**

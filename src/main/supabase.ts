@@ -1,10 +1,37 @@
 import 'dotenv/config'
 import { createClient, SupabaseClient } from '@supabase/supabase-js'
 import ws from 'ws'
+import { existsSync, readFileSync } from 'fs'
+import { join } from 'path'
 
-// Supabase configuration from environment variables
-const SUPABASE_URL = process.env.SUPABASE_URL || ''
-const SUPABASE_ANON_KEY = process.env.SUPABASE_ANON_KEY || ''
+type SupabaseRuntimeConfig = {
+  SUPABASE_URL?: string
+  SUPABASE_ANON_KEY?: string
+}
+
+function readRuntimeConfig(): SupabaseRuntimeConfig {
+  const candidates = [
+    join(process.resourcesPath ?? '', 'resources', 'supabase-config.json'),
+    join(process.cwd(), 'resources', 'supabase-config.json'),
+  ]
+
+  for (const path of candidates) {
+    try {
+      if (!existsSync(path)) continue
+      return JSON.parse(readFileSync(path, 'utf-8')) as SupabaseRuntimeConfig
+    } catch (err) {
+      console.warn('[Supabase] Failed to read runtime config:', err)
+    }
+  }
+
+  return {}
+}
+
+const runtimeConfig = readRuntimeConfig()
+
+// Supabase configuration from environment variables or packaged runtime config
+const SUPABASE_URL = process.env.SUPABASE_URL || runtimeConfig.SUPABASE_URL || ''
+const SUPABASE_ANON_KEY = process.env.SUPABASE_ANON_KEY || runtimeConfig.SUPABASE_ANON_KEY || ''
 
 // Debug logs (remove after testing)
 console.log('[Supabase] Configuration check:')

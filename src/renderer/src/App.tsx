@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { useStore } from './store/useStore'
 import { useAuth } from './store/useAuth'
+import { useWorkspace } from './store/useWorkspace'
 import Sidebar from './components/Sidebar'
 import ProfilesPage from './pages/ProfilesPage'
 import AutomationPage from './pages/AutomationPage'
@@ -8,12 +9,13 @@ import SyncPage from './pages/SyncPage'
 import ExtensionPage from './pages/ExtensionPage'
 import MembersPage from './pages/MembersPage'
 import SettingsPage from './pages/SettingsPage'
+import WorkspaceSettingsPage from './pages/WorkspaceSettingsPage'
 import LoginPage from './pages/LoginPage'
 import RegisterPage from './pages/RegisterPage'
 import ToastContainer from './components/ToastContainer'
 import TemplateManager from './components/TemplateManager'
 
-export type Page = 'profiles' | 'automation' | 'sync' | 'extensions' | 'members' | 'settings' | 'login' | 'register'
+export type Page = 'profiles' | 'automation' | 'sync' | 'extensions' | 'members' | 'settings' | 'workspace-settings' | 'login' | 'register'
 export type AutoSub = 'scripts' | 'scheduler' | 'history'
 
 export default function App() {
@@ -21,26 +23,71 @@ export default function App() {
   const syncRunning = useStore((s) => s.syncRunning)
   const setupStatusListener = useStore((s) => s.setupStatusListener)
   const { initAuth, isAuthenticated, isLoading: authLoading } = useAuth()
+  const { loadWorkspaces, ensureDefaultWorkspace, refreshWorkspaceData, currentWorkspaceId } = useWorkspace()
   const [activePage, setActivePage] = useState<Page>('profiles')
   const [autoSub, setAutoSub] = useState<AutoSub>('scripts')
   const [sidebarWidth, setSidebarWidth] = useState(240)
   const sidebarWidthRef = useRef(sidebarWidth)
   const [showTemplateManager, setShowTemplateManager] = useState(false)
+  const workspaceInitializedRef = useRef(false)
+  const [workspaceReady, setWorkspaceReady] = useState(false)
 
   // Initialize auth on mount
   useEffect(() => {
     initAuth()
   }, [initAuth])
 
-  // Load data after auth is ready
+  // Reset workspace state when user logs out
+  useEffect(() => {
+    if (!isAuthenticated) {
+      setWorkspaceReady(false)
+      workspaceInitializedRef.current = false
+    }
+  }, [isAuthenticated])
+
+  // Setup status listener (separate from workspace init)
   useEffect(() => {
     if (!authLoading && isAuthenticated) {
+      const unsubscribe = setupStatusListener()
+      return () => { 
+        unsubscribe()
+      }
+    }
+  }, [authLoading, isAuthenticated, setupStatusListener])
+
+  // Initialize workspace after auth is ready
+  useEffect(() => {
+    if (!authLoading && isAuthenticated && !workspaceInitializedRef.current) {
+      workspaceInitializedRef.current = true
+      setWorkspaceReady(false) // Not ready yet
+      console.log('[App] Auth ready, initializing workspace...')
+      
+      // First ensure default workspace exists and load all workspaces
+      ensureDefaultWorkspace()
+        .then(() => {
+          console.log('[App] Default workspace ensured, loading workspaces...')
+          return loadWorkspaces()
+        })
+        .then(() => {
+          console.log('[App] Workspace initialized successfully')
+          setWorkspaceReady(true) // Now ready - main process is synced
+        })
+        .catch((error) => {
+          console.error('[App] Failed to initialize workspace:', error)
+          setWorkspaceReady(false)
+          workspaceInitializedRef.current = false // Allow retry
+        })
+    }
+  }, [authLoading, isAuthenticated, ensureDefaultWorkspace, loadWorkspaces])
+
+  // Load data when workspace is ready (after init or when workspace changes)
+  useEffect(() => {
+    if (isAuthenticated && workspaceReady && currentWorkspaceId) {
+      console.log('[App] Workspace ready, loading profiles...')
       loadAll()
       syncRunning()
-      const unsubscribe = setupStatusListener()
-      return () => { unsubscribe() }
     }
-  }, [authLoading, isAuthenticated, loadAll, syncRunning, setupStatusListener])
+  }, [isAuthenticated, workspaceReady, currentWorkspaceId, loadAll, syncRunning])
 
   // Redirect to login if not authenticated
   useEffect(() => {
@@ -59,6 +106,8 @@ export default function App() {
   const navigateTo = (page: Page) => {
     console.log('[App] navigateTo called with:', page)
     setActivePage(page)
+    console.log('[App] activePage set to:', page)
+    console.log('[App] Current activePage state:', activePage)
     if (page === 'automation') setAutoSub('scripts')
   }
 
@@ -131,6 +180,7 @@ export default function App() {
         {activePage === 'extensions' && <ExtensionPage />}
         {activePage === 'members' && <MembersPage />}
         {activePage === 'settings' && <SettingsPage />}
+        {activePage === 'workspace-settings' && <WorkspaceSettingsPage onNavigate={navigateTo} />}
       </main>
       <ToastContainer />
       {showTemplateManager && (

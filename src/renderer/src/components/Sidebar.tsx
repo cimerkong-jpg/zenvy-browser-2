@@ -1,6 +1,8 @@
 import { useState } from 'react'
 import { useTheme, type Theme } from '../store/useTheme'
 import { useAuth } from '../store/useAuth'
+import { useStore } from '../store/useStore'
+import { useWorkspace } from '../store/useWorkspace'
 import type { Page, AutoSub } from '../App'
 import zenvyLogoDark from '../assets/brand/logo-cropped.png'
 import zenvyLogoLight from '../assets/brand/logo-cropped-light.png'
@@ -28,7 +30,10 @@ interface SidebarProps {
 export default function Sidebar({ activePage, onNavigate, autoSub, onAutoSubChange, onOpenTemplateManager }: SidebarProps) {
   const { theme, setTheme, resolvedTheme } = useTheme()
   const { user, signOut } = useAuth()
+  const { profiles } = useStore()
+  const { currentWorkspaceId, currentWorkspace, workspaces } = useWorkspace()
   const [showThemePicker, setShowThemePicker] = useState(false)
+  const [showAccountMenu, setShowAccountMenu] = useState(false)
 
   const handleLogout = async () => {
     try {
@@ -36,6 +41,11 @@ export default function Sidebar({ activePage, onNavigate, autoSub, onAutoSubChan
     } catch (err) {
       console.error('Logout failed:', err)
     }
+  }
+
+  const handleWorkspaceSettingsClick = () => {
+    console.log('[Sidebar] Workspace settings clicked')
+    onNavigate('workspace-settings')
   }
 
   const selectTheme = (nextTheme: Theme) => {
@@ -51,7 +61,7 @@ export default function Sidebar({ activePage, onNavigate, autoSub, onAutoSubChan
       <div className="drag-region h-3 flex-shrink-0" />
 
       {/* Scrollable content */}
-      <div className="no-drag min-h-0 flex-1 overflow-y-auto overflow-x-hidden px-3 pb-4">
+      <div className="min-h-0 flex-1 overflow-y-auto overflow-x-hidden px-3" style={{ WebkitAppRegion: 'no-drag', pointerEvents: 'auto' } as React.CSSProperties}>
         {/* Logo */}
         <div className="mb-6 px-2 py-2">
           <img
@@ -62,7 +72,7 @@ export default function Sidebar({ activePage, onNavigate, autoSub, onAutoSubChan
         </div>
 
         {/* Navigation */}
-        <nav className="space-y-1 mb-8">
+        <nav className="space-y-1 mb-8" style={{ pointerEvents: 'auto' }}>
           <NavItem 
             icon="▣" 
             label="Hồ sơ" 
@@ -121,6 +131,13 @@ export default function Sidebar({ activePage, onNavigate, autoSub, onAutoSubChan
           
           <NavItem 
             icon="⚙" 
+            label="Cài Đặt Workspace" 
+            active={activePage === 'workspace-settings'} 
+            onClick={handleWorkspaceSettingsClick} 
+          />
+          
+          <NavItem 
+            icon="⚙" 
             label="Cài đặt" 
             active={activePage === 'settings'} 
             onClick={() => onNavigate('settings')} 
@@ -128,7 +145,7 @@ export default function Sidebar({ activePage, onNavigate, autoSub, onAutoSubChan
         </nav>
 
         {/* Tools Section */}
-        <div className="mb-8">
+        <div className="mb-4">
           <p className="px-2 mb-2 text-[11px] font-semibold uppercase tracking-wider text-[#6B7280]">
             Công cụ
           </p>
@@ -140,39 +157,66 @@ export default function Sidebar({ activePage, onNavigate, autoSub, onAutoSubChan
             <span>Quản lý Templates</span>
           </button>
         </div>
+      </div>
 
-        {/* Account Section */}
-        {user && (
-          <div className="mb-4 rounded-lg bg-[#111218] border border-[#1F2230] p-3">
-            <div className="mb-3">
-              <p className="text-[11px] text-[#6B7280] mb-1">Tài khoản</p>
-              <p className="text-[13px] font-medium text-[#E5E7EB] truncate" title={user.email}>
-                {user.email}
-              </p>
-            </div>
-            
-            <div className="space-y-2 mb-3">
-              <div className="flex justify-between items-center">
-                <span className="text-[11px] text-[#6B7280]">Gói</span>
-                <span className="text-[12px] text-[#E5E7EB]">Personal</span>
+      {/* Bottom Section - Fixed */}
+      <div className="no-drag flex-shrink-0 border-t border-[#1F2230] px-3 pb-3">
+        {/* Stats Box */}
+        <div className="mt-3 mb-3 rounded-lg border border-[#1F2230] bg-[#0F1117] p-3">
+          <div className="space-y-2.5">
+            <div className="flex items-center gap-2.5">
+              <div className="flex-shrink-0 w-6 h-6 rounded bg-[#1F2230] flex items-center justify-center">
+                <svg className="w-3.5 h-3.5 text-[#10B981]" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                </svg>
               </div>
-              <div className="flex justify-between items-center">
-                <span className="text-[11px] text-[#6B7280]">Hồ sơ</span>
-                <span className="text-[12px] text-[#E5E7EB]">Local</span>
+              <div className="flex-1 min-w-0">
+                <p className="text-[11px] text-[#6B7280]">Số dư chính</p>
+                <p className="text-[13px] font-semibold text-[#E5E7EB]">0 VND</p>
               </div>
             </div>
-            
-            <button
-              onClick={handleLogout}
-              className="w-full rounded-md bg-[#1F2230] px-3 py-1.5 text-[12px] font-medium text-[#9CA3AF] hover:bg-[#2A2D3A] hover:text-[#E5E7EB] transition-all"
-            >
-              Đăng xuất
-            </button>
+
+            <div className="flex items-center gap-2.5">
+              <div className="flex-shrink-0 w-6 h-6 rounded bg-[#1F2230] flex items-center justify-center">
+                <svg className="w-3.5 h-3.5 text-[#7C3AED]" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10" />
+                </svg>
+              </div>
+              <div className="flex-1 min-w-0">
+                <p className="text-[11px] text-[#6B7280]">Số dư hồ sơ</p>
+                <p className="text-[13px] font-semibold text-[#E5E7EB]">{profiles.length} Hồ sơ</p>
+              </div>
+            </div>
+
+            <div className="flex items-center gap-2.5">
+              <div className="flex-shrink-0 w-6 h-6 rounded bg-[#1F2230] flex items-center justify-center">
+                <svg className="w-3.5 h-3.5 text-[#7C3AED]" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M20 7l-8-4-8 4m16 0l-8 4m8-4v10l-8 4m0-10L4 7m8 4v10M4 7v10l8 4" />
+                </svg>
+              </div>
+              <div className="flex-1 min-w-0">
+                <p className="text-[11px] text-[#6B7280]">Gói đang dùng</p>
+                <p className="text-[13px] font-semibold text-[#E5E7EB]">Personal</p>
+              </div>
+            </div>
+
+            <div className="flex items-center gap-2.5">
+              <div className="flex-shrink-0 w-6 h-6 rounded bg-[#1F2230] flex items-center justify-center">
+                <svg className="w-3.5 h-3.5 text-[#7C3AED]" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0zm6 3a2 2 0 11-4 0 2 2 0 014 0zM7 10a2 2 0 11-4 0 2 2 0 014 0z" />
+                </svg>
+              </div>
+              <div className="flex-1 min-w-0">
+                <p className="text-[11px] text-[#6B7280]">Hồ sơ hiện có</p>
+                <p className="text-[13px] font-semibold text-[#E5E7EB]">{profiles.length} Hồ sơ</p>
+              </div>
+            </div>
           </div>
-        )}
+        </div>
+
 
         {/* Theme Switcher */}
-        <div className="mb-4">
+        <div className="mb-3">
           <button
             onClick={() => setShowThemePicker(!showThemePicker)}
             className="w-full flex items-center justify-between rounded-lg bg-[#111218] border border-[#1F2230] px-3 py-2 text-[12px] text-[#9CA3AF] hover:bg-[#1A1D24] transition-all"
@@ -231,11 +275,12 @@ function NavItem({
   return (
     <button
       onClick={onClick}
-      className={`w-full flex items-center gap-3 rounded-lg px-2 py-2 text-[13px] font-medium transition-all ${
+      className={`relative z-10 w-full flex items-center gap-3 rounded-lg px-2 py-2 text-[13px] font-medium transition-all cursor-pointer ${
         active
           ? 'bg-white/10 text-[#E5E7EB]'
           : 'text-[#9CA3AF] hover:bg-white/5 hover:text-[#E5E7EB]'
       }`}
+      style={{ pointerEvents: 'auto' }}
     >
       <span className={`w-5 text-center ${active ? 'text-[#7C3AED]' : 'text-[#6B7280]'}`}>
         {icon}

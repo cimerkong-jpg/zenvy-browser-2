@@ -1,5 +1,6 @@
 import { contextBridge, ipcRenderer } from 'electron'
 import type { Profile, Group, AutomationScript, ScriptExecution, ScheduledTask, TaskHistoryRecord, AppSettings, UserProfile, UserStats, ExtensionInfo } from '../shared/types'
+import type { CreateWorkspaceInput, CreateWorkspaceUserGroupInput, InviteMemberInput, PermissionKey, RolePermissionMap, UpdateWorkspaceMemberInput, Workspace, WorkspaceInvitation, WorkspaceMember, WorkspaceRole, WorkspaceUserGroup, WorkspaceWithStats } from '../shared/workspace-types'
 
 const api = {
   groups: {
@@ -33,6 +34,11 @@ const api = {
       const listener = (_event: any, data: { profileId: string; isRunning: boolean }) => callback(data)
       ipcRenderer.on('browser:status-changed', listener)
       return () => ipcRenderer.removeListener('browser:status-changed', listener)
+    },
+    onChromeDownloadStatus: (callback: (data: any) => void) => {
+      const listener = (_event: any, data: any) => callback(data)
+      ipcRenderer.on('browser:chrome-download-status', listener)
+      return () => ipcRenderer.removeListener('browser:chrome-download-status', listener)
     }
   },
   cookies: {
@@ -123,6 +129,35 @@ const api = {
       ipcRenderer.invoke('auth:getCurrentSession'),
     isAuthenticated: (): Promise<boolean> =>
       ipcRenderer.invoke('auth:isAuthenticated')
+  },
+  workspaces: {
+    getWorkspaces: (): Promise<WorkspaceWithStats[]> => ipcRenderer.invoke('workspaces:getWorkspaces'),
+    getCurrent: (): Promise<WorkspaceWithStats | null> => ipcRenderer.invoke('workspaces:getCurrent'),
+    switchWorkspace: (workspaceId: string | null): Promise<{ success: true; workspaceId: string | null }> =>
+      ipcRenderer.invoke('workspaces:switchWorkspace', workspaceId),
+    createWorkspace: (input: CreateWorkspaceInput): Promise<Workspace> => ipcRenderer.invoke('workspaces:createWorkspace', input),
+    acceptInvitations: (): Promise<string | null> => ipcRenderer.invoke('workspaces:acceptInvitations'),
+    getMembers: (workspaceId: string): Promise<WorkspaceMember[]> => ipcRenderer.invoke('workspaces:getMembers', workspaceId),
+    getInvitations: (workspaceId: string): Promise<WorkspaceInvitation[]> => ipcRenderer.invoke('workspaces:getInvitations', workspaceId),
+    inviteMember: (input: InviteMemberInput): Promise<WorkspaceInvitation> => ipcRenderer.invoke('workspaces:inviteMember', input),
+    revokeInvitation: (invitationId: string): Promise<void> => ipcRenderer.invoke('workspaces:revokeInvitation', invitationId),
+    resendInvitation: (invitationId: string): Promise<void> => ipcRenderer.invoke('workspaces:resendInvitation', invitationId),
+    removeMember: (memberId: string): Promise<void> => ipcRenderer.invoke('workspaces:removeMember', memberId),
+    updateMemberRole: (memberId: string, role: WorkspaceRole): Promise<void> => ipcRenderer.invoke('workspaces:updateMemberRole', memberId, role),
+    updateMember: (memberId: string, input: UpdateWorkspaceMemberInput): Promise<void> => ipcRenderer.invoke('workspaces:updateMember', memberId, input),
+    getPermissions: (workspaceId?: string): Promise<RolePermissionMap> => ipcRenderer.invoke('workspaces:getPermissions', workspaceId),
+    getRolePermissions: (workspaceId?: string): Promise<Record<WorkspaceRole, RolePermissionMap>> => ipcRenderer.invoke('workspaces:getRolePermissions', workspaceId),
+    updateRolePermissions: (workspaceId: string, role: WorkspaceRole, permissions: RolePermissionMap): Promise<RolePermissionMap> =>
+      ipcRenderer.invoke('workspaces:updateRolePermissions', workspaceId, role, permissions),
+    hasPermission: (permissionKey: PermissionKey, workspaceId?: string): Promise<boolean> => ipcRenderer.invoke('workspaces:hasPermission', permissionKey, workspaceId),
+    getUserGroups: (workspaceId: string): Promise<WorkspaceUserGroup[]> => ipcRenderer.invoke('workspaces:getUserGroups', workspaceId),
+    createUserGroup: (input: CreateWorkspaceUserGroupInput): Promise<WorkspaceUserGroup> => ipcRenderer.invoke('workspaces:createUserGroup', input),
+    updateUserGroup: (id: string, name: string, description?: string): Promise<WorkspaceUserGroup> => ipcRenderer.invoke('workspaces:updateUserGroup', id, name, description),
+    deleteUserGroup: (id: string): Promise<void> => ipcRenderer.invoke('workspaces:deleteUserGroup', id),
+    ensureDefaultWorkspace: (): Promise<WorkspaceWithStats> => ipcRenderer.invoke('workspaces:ensureDefaultWorkspace'),
+    deleteWorkspace: (workspaceId: string): Promise<{ success: true; switchedToWorkspaceId: string | null }> => ipcRenderer.invoke('workspaces:deleteWorkspace', workspaceId),
+    updateWorkspace: (workspaceId: string, updates: { name?: string; description?: string }): Promise<void> => ipcRenderer.invoke('workspaces:updateWorkspace', workspaceId, updates),
+    updateWorkspaceSettings: (workspaceId: string, settings: { permissionMode?: 'group' | 'profile'; automationMode?: 'flowchart' | 'javascript' }): Promise<void> => ipcRenderer.invoke('workspaces:updateWorkspaceSettings', workspaceId, settings)
   }
 }
 

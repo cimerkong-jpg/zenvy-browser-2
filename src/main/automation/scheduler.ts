@@ -39,7 +39,7 @@ let getProfilesFn: (() => Profile[]) | null = null
 
 function executeTask(task: ScheduledTask): void {
   if (!getProfilesFn) return
-  const script = getScript(task.scriptId)
+  const script = getScript(task.scriptId, task.workspaceId)
   if (!script) return
   const allProfiles = getProfilesFn()
   const profiles = task.profileIds
@@ -118,16 +118,19 @@ export function stopScheduler(): void {
   getProfilesFn = null
 }
 
-export function getScheduledTasks(): ScheduledTask[] {
-  return readTasks()
+export function getScheduledTasks(workspaceId?: string | null): ScheduledTask[] {
+  const tasks = readTasks()
+  return workspaceId ? tasks.filter((task) => task.workspaceId === workspaceId) : tasks
 }
 
 export function createScheduledTask(
-  data: Pick<ScheduledTask, 'scriptId' | 'scriptName' | 'profileIds' | 'type' | 'runAt' | 'intervalMs'>
+  data: Pick<ScheduledTask, 'scriptId' | 'scriptName' | 'profileIds' | 'type' | 'runAt' | 'intervalMs'>,
+  workspaceId?: string | null
 ): ScheduledTask {
   const tasks = readTasks()
   const task: ScheduledTask = {
     id: uuidv4(),
+    workspaceId: workspaceId ?? null,
     scriptId: data.scriptId,
     scriptName: data.scriptName,
     profileIds: data.profileIds,
@@ -148,10 +151,11 @@ export function createScheduledTask(
 
 export function updateScheduledTask(
   id: string,
-  data: Partial<Pick<ScheduledTask, 'scriptId' | 'scriptName' | 'profileIds' | 'type' | 'runAt' | 'intervalMs' | 'enabled'>>
+  data: Partial<Pick<ScheduledTask, 'scriptId' | 'scriptName' | 'profileIds' | 'type' | 'runAt' | 'intervalMs' | 'enabled'>>,
+  workspaceId?: string | null
 ): ScheduledTask | null {
   const tasks = readTasks()
-  const idx = tasks.findIndex((t) => t.id === id)
+  const idx = tasks.findIndex((t) => t.id === id && (!workspaceId || t.workspaceId === workspaceId))
   if (idx === -1) return null
   tasks[idx] = {
     ...tasks[idx],
@@ -165,11 +169,11 @@ export function updateScheduledTask(
   return tasks[idx]
 }
 
-export function toggleScheduledTask(id: string, enabled: boolean): ScheduledTask | null {
-  return updateScheduledTask(id, { enabled })
+export function toggleScheduledTask(id: string, enabled: boolean, workspaceId?: string | null): ScheduledTask | null {
+  return updateScheduledTask(id, { enabled }, workspaceId)
 }
 
-export function deleteScheduledTask(id: string): void {
+export function deleteScheduledTask(id: string, workspaceId?: string | null): void {
   clearTaskTimer(id)
-  writeTasks(readTasks().filter((t) => t.id !== id))
+  writeTasks(readTasks().filter((t) => !(t.id === id && (!workspaceId || t.workspaceId === workspaceId))))
 }

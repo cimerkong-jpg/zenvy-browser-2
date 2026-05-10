@@ -53,6 +53,7 @@ export interface Fingerprint {
 
 export interface Profile {
   id: string
+  workspaceId?: string | null
   name: string
   groupId: string | null
   notes: string
@@ -67,6 +68,7 @@ export interface Profile {
 
 export interface Group {
   id: string
+  workspaceId?: string | null
   name: string
   createdAt: number
 }
@@ -82,6 +84,7 @@ export type ScriptStatus = 'idle' | 'running' | 'success' | 'error'
 
 export interface AutomationScript {
   id: string
+  workspaceId?: string | null
   name: string
   description: string
   code: string
@@ -118,6 +121,7 @@ export type ScheduleType = 'once' | 'interval'
 
 export interface ScheduledTask {
   id: string
+  workspaceId?: string | null
   scriptId: string
   scriptName: string
   profileIds: string[]

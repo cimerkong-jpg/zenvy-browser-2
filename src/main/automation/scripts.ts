@@ -29,14 +29,16 @@ function writeScripts(scripts: AutomationScript[]): void {
   writeFileSync(getScriptsPath(), JSON.stringify(scripts, null, 2), 'utf-8')
 }
 
-export function getScripts(): AutomationScript[] {
-  return readScripts()
+export function getScripts(workspaceId?: string | null): AutomationScript[] {
+  const scripts = readScripts()
+  return workspaceId ? scripts.filter((script) => script.workspaceId === workspaceId) : scripts
 }
 
-export function createScript(data: Pick<AutomationScript, 'name' | 'description' | 'code'>): AutomationScript {
+export function createScript(data: Pick<AutomationScript, 'name' | 'description' | 'code'>, workspaceId?: string | null): AutomationScript {
   const scripts = readScripts()
   const script: AutomationScript = {
     id: uuidv4(),
+    workspaceId: workspaceId ?? null,
     name: data.name,
     description: data.description,
     code: data.code,
@@ -48,20 +50,20 @@ export function createScript(data: Pick<AutomationScript, 'name' | 'description'
   return script
 }
 
-export function updateScript(id: string, data: Partial<Pick<AutomationScript, 'name' | 'description' | 'code'>>): AutomationScript | null {
+export function updateScript(id: string, data: Partial<Pick<AutomationScript, 'name' | 'description' | 'code'>>, workspaceId?: string | null): AutomationScript | null {
   const scripts = readScripts()
-  const idx = scripts.findIndex((s) => s.id === id)
+  const idx = scripts.findIndex((s) => s.id === id && (!workspaceId || s.workspaceId === workspaceId))
   if (idx === -1) return null
   scripts[idx] = { ...scripts[idx], ...data, updatedAt: Date.now() }
   writeScripts(scripts)
   return scripts[idx]
 }
 
-export function deleteScript(id: string): void {
+export function deleteScript(id: string, workspaceId?: string | null): void {
   const scripts = readScripts()
-  writeScripts(scripts.filter((s) => s.id !== id))
+  writeScripts(scripts.filter((s) => !(s.id === id && (!workspaceId || s.workspaceId === workspaceId))))
 }
 
-export function getScript(id: string): AutomationScript | null {
-  return readScripts().find((s) => s.id === id) ?? null
+export function getScript(id: string, workspaceId?: string | null): AutomationScript | null {
+  return readScripts().find((s) => s.id === id && (!workspaceId || s.workspaceId === workspaceId)) ?? null
 }

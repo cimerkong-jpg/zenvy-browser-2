@@ -52,14 +52,16 @@ export function getTemplate(name: string): ProfileTemplate | null {
 }
 
 // Get custom templates directory
-function getCustomTemplatesDir(): string {
-  return join(app.getPath('userData'), 'custom-templates')
+function getCustomTemplatesDir(workspaceId?: string | null): string {
+  return workspaceId
+    ? join(app.getPath('userData'), 'workspaces', workspaceId, 'custom-templates')
+    : join(app.getPath('userData'), 'custom-templates')
 }
 
 // Load custom templates
-export function getCustomTemplates(): ProfileTemplate[] {
+export function getCustomTemplates(workspaceId?: string | null): ProfileTemplate[] {
   const templates: ProfileTemplate[] = []
-  const customDir = getCustomTemplatesDir()
+  const customDir = getCustomTemplatesDir(workspaceId)
   
   if (!existsSync(customDir)) {
     return templates
@@ -89,13 +91,13 @@ export function getCustomTemplates(): ProfileTemplate[] {
 }
 
 // Get all templates (built-in + custom)
-export function getAllTemplates(): ProfileTemplate[] {
-  return [...getTemplates(), ...getCustomTemplates()]
+export function getAllTemplates(workspaceId?: string | null): ProfileTemplate[] {
+  return [...getTemplates(), ...getCustomTemplates(workspaceId)]
 }
 
 // Save custom template
-export function saveCustomTemplate(template: ProfileTemplate): void {
-  const customDir = getCustomTemplatesDir()
+export function saveCustomTemplate(template: ProfileTemplate, workspaceId?: string | null): void {
+  const customDir = getCustomTemplatesDir(workspaceId)
   
   if (!existsSync(customDir)) {
     mkdirSync(customDir, { recursive: true })
@@ -108,8 +110,8 @@ export function saveCustomTemplate(template: ProfileTemplate): void {
 }
 
 // Delete custom template
-export function deleteCustomTemplate(name: string): void {
-  const customDir = getCustomTemplatesDir()
+export function deleteCustomTemplate(name: string, workspaceId?: string | null): void {
+  const customDir = getCustomTemplatesDir(workspaceId)
   const fileName = name.toLowerCase().replace(/[^a-z0-9]/g, '-') + '.json'
   const filePath = join(customDir, fileName)
   

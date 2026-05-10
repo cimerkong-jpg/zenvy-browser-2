@@ -16,3 +16,4 @@ dist/
 # Build outputs
 *.dmg
 *.zip
+resources/supabase-config.json

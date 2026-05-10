@@ -1,5 +1,5 @@
 import { app } from 'electron'
-import { existsSync, readFileSync, writeFileSync, mkdirSync } from 'fs'
+import { existsSync, readFileSync, writeFileSync, mkdirSync, renameSync } from 'fs'
 import { join } from 'path'
 import { randomBytes } from 'crypto'
 import type { StoreSchema, Profile, Group } from '../shared/types'
@@ -8,18 +8,18 @@ function uuidv4(): string {
   return randomBytes(16).toString('hex').replace(/(.{8})(.{4})(.{4})(.{4})(.{12})/, '$1-$2-$3-$4-$5')
 }
 
-function nextProfileId(profiles: Profile[]): string {
-  const maxId = profiles.reduce((max, profile) => {
-    if (!/^\d+$/.test(profile.id)) return max
-    return Math.max(max, Number(profile.id))
-  }, 1000)
-  return String(maxId + 1)
+function isUuid(value: string): boolean {
+  return /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(value)
 }
 
 function getDbPath(): string {
   const dir = app.getPath('userData')
   if (!existsSync(dir)) mkdirSync(dir, { recursive: true })
   return join(dir, 'zenvy-data.json')
+}
+
+function getProfileDir(profileId: string): string {
+  return join(app.getPath('userData'), 'profiles', profileId)
 }
 
 function normalizeGroup(group: any): Group {
@@ -32,6 +32,7 @@ function normalizeGroup(group: any): Group {
         : 'Untitled Group'
   return {
     id: String(group?.id ?? uuidv4()),
+    workspaceId: typeof group?.workspaceId === 'string' ? group.workspaceId : null,
     name,
     createdAt: typeof group?.createdAt === 'number' ? group.createdAt : Date.now()
   }
@@ -42,6 +43,7 @@ function normalizeProfile(profile: any): Profile {
   return {
     ...rest,
     id: String(profile?.id ?? ''),
+    workspaceId: typeof profile?.workspaceId === 'string' ? profile.workspaceId : null,
     groupId: typeof profile?.groupId === 'string' ? profile.groupId : null,
   }
 }
@@ -65,15 +67,53 @@ function write(data: StoreSchema): void {
   writeFileSync(getDbPath(), JSON.stringify(data, null, 2), 'utf-8')
 }
 
-// ── Groups ──────────────────────────────────────────────────────────────────
+function migrateLegacyProfileIds(data: StoreSchema): StoreSchema {
+  let changed = false
 
-export function getGroups(): Group[] {
-  return read().groups
+  const profiles = data.profiles.map((profile) => {
+    if (isUuid(profile.id)) return profile
+
+    const oldId = profile.id
+    const newId = uuidv4()
+    changed = true
+
+    const oldDir = getProfileDir(oldId)
+    const newDir = getProfileDir(newId)
+    try {
+      if (existsSync(oldDir) && !existsSync(newDir)) {
+        renameSync(oldDir, newDir)
+      }
+    } catch (err) {
+      console.warn('[DB] Failed to rename legacy profile folder:', err)
+    }
+
+    return { ...profile, id: newId, updatedAt: Date.now() }
+  })
+
+  if (!changed) return data
+
+  return {
+    ...data,
+    profiles,
+    scripts: data.scripts,
+  }
 }
 
-export function createGroup(name: string): Group {
+export function migrateForCloudSync(): void {
+  const data = migrateLegacyProfileIds(read())
+  write(data)
+}
+
+// ── Groups ──────────────────────────────────────────────────────────────────
+
+export function getGroups(workspaceId?: string | null): Group[] {
+  const groups = read().groups
+  return workspaceId ? groups.filter((group) => group.workspaceId === workspaceId) : groups
+}
+
+export function createGroup(name: string, workspaceId?: string | null): Group {
   const data = read()
-  const group: Group = { id: uuidv4(), name, createdAt: Date.now() }
+  const group: Group = { id: uuidv4(), workspaceId: workspaceId ?? null, name, createdAt: Date.now() }
   data.groups.unshift(group)
   write(data)
   return group
@@ -97,13 +137,14 @@ export function deleteGroup(id: string): void {
 
 // ── Profiles ─────────────────────────────────────────────────────────────────
 
-export function getProfiles(): Profile[] {
-  return read().profiles
+export function getProfiles(workspaceId?: string | null): Profile[] {
+  const profiles = read().profiles
+  return workspaceId ? profiles.filter((profile) => profile.workspaceId === workspaceId) : profiles
 }
 
-export function createProfile(data: Omit<Profile, 'id' | 'createdAt' | 'updatedAt'>): Profile {
+export function createProfile(data: Omit<Profile, 'id' | 'createdAt' | 'updatedAt'>, workspaceId?: string | null): Profile {
   const db = read()
-  const profile: Profile = { ...data, id: nextProfileId(db.profiles), createdAt: Date.now(), updatedAt: Date.now() }
+  const profile: Profile = { ...data, workspaceId: data.workspaceId ?? workspaceId ?? null, id: uuidv4(), createdAt: Date.now(), updatedAt: Date.now() }
   db.profiles.unshift(profile)
   write(db)
   return profile
@@ -136,7 +177,7 @@ export function duplicateProfile(id: string): Profile | null {
   if (!original) return null
   const duplicate: Profile = {
     ...original,
-    id: nextProfileId(db.profiles),
+    id: uuidv4(),
     name: `${original.name} Copy`,
     status: 'closed',
     createdAt: Date.now(),
@@ -155,7 +196,7 @@ export function exportProfiles(ids: string[]): string {
   return JSON.stringify({ version: '1.0.0', exportDate: Date.now(), profiles }, null, 2)
 }
 
-export function importProfiles(jsonData: string): Profile[] {
+export function importProfiles(jsonData: string, workspaceId?: string | null): Profile[] {
   const db = read()
   const importData = JSON.parse(jsonData)
   if (!importData.profiles || !Array.isArray(importData.profiles)) {
@@ -166,7 +207,8 @@ export function importProfiles(jsonData: string): Profile[] {
     const { tags: _t, ...profileData } = importData.profiles[i]
     const newProfile: Profile = {
       ...profileData,
-      id: nextProfileId(db.profiles),
+      workspaceId: workspaceId ?? profileData.workspaceId ?? null,
+      id: uuidv4(),
       createdAt: Date.now(),
       updatedAt: Date.now(),
       status: 'closed',
@@ -176,4 +218,27 @@ export function importProfiles(jsonData: string): Profile[] {
   }
   write(db)
   return imported
+}
+
+export function replaceGroupsAndProfiles(groups: Group[], profiles: Profile[], workspaceId?: string | null): void {
+  const db = read()
+  if (workspaceId) {
+    write({
+      ...db,
+      groups: [
+        ...db.groups.filter((group) => group.workspaceId && group.workspaceId !== workspaceId),
+        ...groups,
+      ],
+      profiles: [
+        ...db.profiles.filter((profile) => profile.workspaceId && profile.workspaceId !== workspaceId),
+        ...profiles,
+      ],
+    })
+    return
+  }
+  write({
+    ...db,
+    groups,
+    profiles,
+  })
 }

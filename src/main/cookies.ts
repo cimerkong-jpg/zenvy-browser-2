@@ -1,6 +1,7 @@
 import { readFileSync, writeFileSync, existsSync, mkdirSync } from 'fs'
 import { join, dirname } from 'path'
 import { app } from 'electron'
+import { getCurrentWorkspaceId } from './workspaces'
 
 export interface Cookie {
   domain: string
@@ -15,7 +16,19 @@ export interface Cookie {
 
 // Get cookies file path for profile
 function getCookiesPath(profileId: string): string {
-  return join(app.getPath('userData'), 'profiles', profileId, 'cookies.json')
+  const workspaceId = getCurrentWorkspaceId()
+  return workspaceId
+    ? join(app.getPath('userData'), 'workspaces', workspaceId, 'profiles', profileId, 'cookies.json')
+    : join(app.getPath('userData'), 'profiles', profileId, 'cookies.json')
+}
+
+function writeCookies(profileId: string, cookies: Cookie[]): void {
+  const cookiesPath = getCookiesPath(profileId)
+  const dir = dirname(cookiesPath)
+  if (!existsSync(dir)) {
+    mkdirSync(dir, { recursive: true })
+  }
+  writeFileSync(cookiesPath, JSON.stringify(cookies, null, 2))
 }
 
 // Parse Netscape cookies.txt format
@@ -98,13 +111,7 @@ export function importCookies(profileId: string, filePath: string): Cookie[] {
   const content = readFileSync(filePath, 'utf-8')
   const cookies = parseAnyCookieFormat(content)
   
-  // Save to profile
-  const cookiesPath = getCookiesPath(profileId)
-  const dir = dirname(cookiesPath)
-  if (!existsSync(dir)) {
-    mkdirSync(dir, { recursive: true })
-  }
-  writeFileSync(cookiesPath, JSON.stringify(cookies, null, 2))
+  writeCookies(profileId, cookies)
   
   return cookies
 }
@@ -146,12 +153,7 @@ export function setCookie(profileId: string, cookie: Cookie): void {
     cookies.push(cookie)
   }
   
-  const cookiesPath = getCookiesPath(profileId)
-  const dir = dirname(cookiesPath)
-  if (!existsSync(dir)) {
-    mkdirSync(dir, { recursive: true })
-  }
-  writeFileSync(cookiesPath, JSON.stringify(cookies, null, 2))
+  writeCookies(profileId, cookies)
 }
 
 // Delete cookie
@@ -159,22 +161,12 @@ export function deleteCookie(profileId: string, domain: string, name: string): v
   const cookies = getCookies(profileId)
   const filtered = cookies.filter(c => !(c.domain === domain && c.name === name))
   
-  const cookiesPath = getCookiesPath(profileId)
-  const dir = dirname(cookiesPath)
-  if (!existsSync(dir)) {
-    mkdirSync(dir, { recursive: true })
-  }
-  writeFileSync(cookiesPath, JSON.stringify(filtered, null, 2))
+  writeCookies(profileId, filtered)
 }
 
 // Clear all cookies for profile
 export function clearCookies(profileId: string): void {
-  const cookiesPath = getCookiesPath(profileId)
-  const dir = dirname(cookiesPath)
-  if (!existsSync(dir)) {
-    mkdirSync(dir, { recursive: true })
-  }
-  writeFileSync(cookiesPath, JSON.stringify([]))
+  writeCookies(profileId, [])
 }
 
 // Sync cookies from Chrome session to storage
@@ -190,10 +182,9 @@ export function syncCookiesFromBrowser(profileId: string, chromeCookies: any[]):
     sameSite: c.sameSite as any
   }))
   
-  const cookiesPath = getCookiesPath(profileId)
-  const dir = dirname(cookiesPath)
-  if (!existsSync(dir)) {
-    mkdirSync(dir, { recursive: true })
-  }
-  writeFileSync(cookiesPath, JSON.stringify(cookies, null, 2))
+  writeCookies(profileId, cookies)
+}
+
+export function replaceCookies(profileId: string, cookies: Cookie[]): void {
+  writeCookies(profileId, cookies)
 }

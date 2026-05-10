@@ -1,13 +1,16 @@
-import { useRef, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 import type { Group, Profile } from '../../../shared/types'
 import { useStore } from '../store/useStore'
+import { useWorkspace } from '../store/useWorkspace'
 import ContextMenu, { type ContextMenuItem } from './ContextMenu'
 import CookieManager from './CookieManager'
+import { getDisplayId } from '../utils/profileId'
 
 interface Props {
   profile: Profile
   groups: Group[]
+  allProfiles: Profile[]
   isRunning: boolean
   isSelected: boolean
   onEdit: (profile: Profile) => void
@@ -17,26 +20,55 @@ interface Props {
 export default function ProfileRow({
   profile,
   groups,
+  allProfiles,
   isRunning,
   isSelected,
   onEdit,
   onQuickEdit,
 }: Props) {
   const { toggleSelect, loadAll } = useStore()
+  const hasPermission = useWorkspace((state) => state.hasPermission)
   const [showCookies, setShowCookies] = useState(false)
   const [contextMenu, setContextMenu] = useState<{ x: number; y: number } | null>(null)
   const [isLaunching, setIsLaunching] = useState(false)
+  const [chromeDownload, setChromeDownload] = useState<{ active: boolean; message: string; percent?: number }>({
+    active: false,
+    message: ''
+  })
   const moreRef = useRef<HTMLButtonElement>(null)
 
   const group = groups.find((item) => item.id === profile.groupId)
 
+  useEffect(() => {
+    return window.api.browser.onChromeDownloadStatus((status: any) => {
+      if (status.profileId && status.profileId !== profile.id) return
+
+      if (status.state === 'checking' || status.state === 'downloading') {
+        setChromeDownload({
+          active: true,
+          message: status.message || 'Dang tai Chrome...',
+          percent: status.percent
+        })
+        return
+      }
+
+      if (status.state === 'ready' || status.state === 'error') {
+        setChromeDownload({ active: false, message: '' })
+      }
+    })
+  }, [profile.id])
+
   const handleLaunch = async () => {
+    if (!hasPermission('profile.open')) return
     setIsLaunching(true)
     try {
       if (isRunning) {
         await window.api.browser.close(profile.id)
       } else {
-        await window.api.browser.launch(profile)
+        const result = await window.api.browser.launch(profile)
+        if (!result?.success && result?.error) {
+          alert(result.error)
+        }
       }
       useStore.getState().setRunningIds(await window.api.browser.running())
     } finally {
@@ -45,12 +77,14 @@ export default function ProfileRow({
   }
 
   const handleDelete = async () => {
+    if (!hasPermission('profile.delete')) return
     if (!confirm(`Xóa profile "${profile.name}"?`)) return
     await window.api.profiles.delete(profile.id)
     await loadAll()
   }
 
   const handleDuplicate = async () => {
+    if (!hasPermission('profile.clone')) return
     await window.api.profiles.duplicate(profile.id)
     await loadAll()
   }
@@ -128,7 +162,7 @@ export default function ProfileRow({
             className="font-mono text-xs text-[#9CA3AF] select-text cursor-text"
             title={profile.id}
           >
-            {profile.id}
+            {getDisplayId(profile.id, allProfiles)}
           </span>
         </td>
 
@@ -244,10 +278,23 @@ export default function ProfileRow({
         {/* Actions */}
         <td className="px-4 py-3">
           <div className="flex items-center justify-end gap-2">
+            {chromeDownload.active && (
+              <div
+                className="flex items-center gap-1.5 rounded-md bg-[#1F2230] px-2 py-1 text-[11px] text-[#9CA3AF]"
+                title={chromeDownload.message}
+              >
+                <span className="flex h-4 w-4 items-center justify-center rounded-full border border-[#10B981]/40 text-[9px] font-bold text-[#10B981] animate-spin">
+                  C
+                </span>
+                <span className="max-w-[110px] truncate">
+                  {chromeDownload.percent !== undefined ? `Chrome ${chromeDownload.percent}%` : 'Dang tai Chrome'}
+                </span>
+              </div>
+            )}
             {isRunning ? (
               <button
                 onClick={handleLaunch}
-                disabled={isLaunching}
+                disabled={isLaunching || !hasPermission('profile.open')}
                 className="rounded-md bg-red-500/10 px-3 py-1.5 text-xs font-medium text-red-400 hover:bg-red-500/20 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
               >
                 {isLaunching ? 'Closing...' : 'Close'}
@@ -255,10 +302,10 @@ export default function ProfileRow({
             ) : (
               <button
                 onClick={handleLaunch}
-                disabled={isLaunching}
+                disabled={isLaunching || !hasPermission('profile.open')}
                 className="rounded-md bg-[#7C3AED] px-3 py-1.5 text-xs font-medium text-white hover:bg-[#8B5CF6] transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
               >
-                {isLaunching ? 'Opening...' : 'Open'}
+                {chromeDownload.active ? 'Dang tai...' : isLaunching ? 'Opening...' : 'Open'}
               </button>
             )}
             <button

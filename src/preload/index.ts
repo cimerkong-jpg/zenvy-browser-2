@@ -1,6 +1,6 @@
 import { contextBridge, ipcRenderer } from 'electron'
 import type { Profile, Group, AutomationScript, ScriptExecution, ScheduledTask, TaskHistoryRecord, AppSettings, UserProfile, UserStats, ExtensionInfo } from '../shared/types'
-import type { CreateWorkspaceInput, CreateWorkspaceUserGroupInput, InviteMemberInput, PermissionKey, RolePermissionMap, UpdateWorkspaceMemberInput, Workspace, WorkspaceInvitation, WorkspaceMember, WorkspaceRole, WorkspaceUserGroup, WorkspaceWithStats } from '../shared/workspace-types'
+import type { CreateWorkspaceInput, CreateWorkspaceUserGroupInput, InviteMemberInput, PermissionKey, RolePermissionMap, UpdateWorkspaceMemberInput, Workspace, WorkspaceInvitation, WorkspaceMember, WorkspaceMemberAuthorizations, WorkspaceRole, WorkspaceUserGroup, WorkspaceWithStats } from '../shared/workspace-types'
 
 const api = {
   groups: {
@@ -44,12 +44,12 @@ const api = {
   cookies: {
     get: (profileId: string) => ipcRenderer.invoke('cookies:get', profileId),
     set: (profileId: string, cookie: any) => ipcRenderer.invoke('cookies:set', profileId, cookie),
-    delete: (profileId: string, domain: string, name: string) => 
+    delete: (profileId: string, domain: string, name: string) =>
       ipcRenderer.invoke('cookies:delete', profileId, domain, name),
     clear: (profileId: string) => ipcRenderer.invoke('cookies:clear', profileId),
     import: (profileId: string) => ipcRenderer.invoke('cookies:import', profileId),
     export: (profileId: string) => ipcRenderer.invoke('cookies:export', profileId),
-    sync: (profileId: string, chromeCookies: any[]) => 
+    sync: (profileId: string, chromeCookies: any[]) =>
       ipcRenderer.invoke('cookies:sync', profileId, chromeCookies)
   },
   templates: {
@@ -111,7 +111,7 @@ const api = {
   },
   extensions: {
     getAll: (profileId: string): Promise<ExtensionInfo[]> => ipcRenderer.invoke('extensions:getAll', profileId),
-    toggle: (profileId: string, extId: string, enabled: boolean): Promise<boolean> => 
+    toggle: (profileId: string, extId: string, enabled: boolean): Promise<boolean> =>
       ipcRenderer.invoke('extensions:toggle', profileId, extId, enabled),
     copyTo: (fromProfileId: string, toProfileIds: string[], extIds: string[]): Promise<{ success: number; failed: number }> =>
       ipcRenderer.invoke('extensions:copyTo', fromProfileId, toProfileIds, extIds)
@@ -147,6 +147,9 @@ const api = {
     removeMember: (memberId: string): Promise<void> => ipcRenderer.invoke('workspaces:removeMember', memberId),
     updateMemberRole: (memberId: string, role: WorkspaceRole): Promise<void> => ipcRenderer.invoke('workspaces:updateMemberRole', memberId, role),
     updateMember: (memberId: string, input: UpdateWorkspaceMemberInput): Promise<void> => ipcRenderer.invoke('workspaces:updateMember', memberId, input),
+    getMemberAuthorizations: (memberId: string): Promise<WorkspaceMemberAuthorizations> => ipcRenderer.invoke('workspaces:getMemberAuthorizations', memberId),
+    updateMemberAuthorizations: (memberId: string, input: WorkspaceMemberAuthorizations): Promise<WorkspaceMemberAuthorizations> =>
+      ipcRenderer.invoke('workspaces:updateMemberAuthorizations', memberId, input),
     getPermissions: (workspaceId?: string): Promise<RolePermissionMap> => ipcRenderer.invoke('workspaces:getPermissions', workspaceId),
     getRolePermissions: (workspaceId?: string): Promise<Record<WorkspaceRole, RolePermissionMap>> => ipcRenderer.invoke('workspaces:getRolePermissions', workspaceId),
     updateRolePermissions: (workspaceId: string, role: WorkspaceRole, permissions: RolePermissionMap): Promise<RolePermissionMap> =>

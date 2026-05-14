@@ -1,4 +1,6 @@
 import { useState, useEffect } from 'react'
+import { toast } from '../store/useToast'
+import { dialog } from '../store/useDialog'
 
 interface Template {
   name: string
@@ -28,14 +30,20 @@ export default function TemplateManager({ onClose }: Props) {
   }
 
   const handleDelete = async (name: string) => {
-    if (!confirm(`Xóa template "${name}"?`)) return
-    
+    const confirmed = await dialog.confirmDelete(
+      'Xóa template',
+      `Xóa template "${name}"?`
+    )
+
+    if (!confirmed) return
+
     try {
       await window.api.templates.delete(name)
       await loadTemplates()
+      toast.success('Đã xóa template')
     } catch (error) {
       console.error('Failed to delete template:', error)
-      alert('Lỗi khi xóa template')
+      toast.error('Lỗi khi xóa template')
     }
   }
 
@@ -43,11 +51,11 @@ export default function TemplateManager({ onClose }: Props) {
     try {
       const success = await window.api.templates.export(template)
       if (success) {
-        alert('✅ Template đã được export!')
+        toast.success('Template đã được export!')
       }
     } catch (error) {
       console.error('Failed to export template:', error)
-      alert('Lỗi khi export template')
+      toast.error('Lỗi khi export template')
     }
   }
 
@@ -56,19 +64,19 @@ export default function TemplateManager({ onClose }: Props) {
       const template = await window.api.templates.import()
       if (template) {
         await loadTemplates()
-        alert(`✅ Template "${template.name}" đã được import!`)
+        toast.success(`Template "${template.name}" đã được import!`)
       }
     } catch (error) {
       console.error('Failed to import template:', error)
-      alert('Lỗi khi import template')
+      toast.error('Lỗi khi import template')
     }
   }
 
   // Separate built-in and custom templates
-  const builtInTemplates = templates.filter(t => 
+  const builtInTemplates = templates.filter(t =>
     ['Facebook', 'Google', 'Amazon', 'TikTok', 'Instagram'].includes(t.name)
   )
-  const customTemplates = templates.filter(t => 
+  const customTemplates = templates.filter(t =>
     !['Facebook', 'Google', 'Amazon', 'TikTok', 'Instagram'].includes(t.name)
   )
 

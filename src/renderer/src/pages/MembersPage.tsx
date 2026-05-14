@@ -3,6 +3,7 @@ import { useAuth } from '../store/useAuth'
 import { useWorkspace } from '../store/useWorkspace'
 import { useStore } from '../store/useStore'
 import { toast } from '../store/useToast'
+import { dialog } from '../store/useDialog'
 import type { Group, Profile } from '../../../shared/types'
 import {
   DefaultRolePermissionMap,
@@ -20,7 +21,7 @@ import {
 
 type Tab = 'members' | 'invited' | 'permissions'
 type GroupPermissionCategory = 'profiles' | 'profileGroups' | 'automation'
-type WorkspacePermissionMode = 'group' | 'profile'
+type AuthorizationMode = 'group' | 'profile'
 
 const permissionGroups: Array<{ title: string; keys: PermissionKey[] }> = [
   { title: 'Quản lý hồ sơ', keys: ['profile.open', 'profile.create', 'profile.edit', 'profile.delete', 'profile.import', 'profile.export', 'profile.clone', 'profile.transfer'] },
@@ -131,6 +132,7 @@ export default function MembersPage() {
     updateUserGroup,
     deleteUserGroup,
     updateRolePermissions,
+    getMemberAuthorizations,
     hasPermission,
   } = useWorkspace()
 
@@ -146,46 +148,69 @@ export default function MembersPage() {
     refreshWorkspaceData().catch(() => undefined)
   }, [currentWorkspace?.id, refreshWorkspaceData])
 
+  // ✅ Reset selectedGroup when workspace changes
   useEffect(() => {
     loadAll().catch(() => undefined)
   }, [currentWorkspace?.id, loadAll])
 
   useEffect(() => {
+    if (!currentWorkspace?.id) {
+      setSelectedGroup(null)
+      return
+    }
+
     if (groupsLoading) return
+
     if (userGroups.length === 0) {
       if (selectedGroup !== null) setSelectedGroup(null)
       return
     }
-    if (!selectedGroup || !userGroups.some((group) => group.id === selectedGroup)) {
+
+    // ✅ Check if selectedGroup belongs to current workspace
+    const selectedGroupBelongsToWorkspace = userGroups.some((group) => group.id === selectedGroup)
+
+    if (!selectedGroup || !selectedGroupBelongsToWorkspace) {
       setSelectedGroup(userGroups[0].id)
     }
-  }, [groupsLoading, selectedGroup, userGroups])
+  }, [currentWorkspace?.id, groupsLoading, selectedGroup, userGroups])
 
   const canInvite = hasPermission('member.invite')
   const canRemove = hasPermission('member.remove')
   const canEditRole = hasPermission('member.edit_role')
   const canEditPermissions = hasPermission('workspace.settings')
-  const permissionMode: WorkspacePermissionMode =
-    currentWorkspace?.settings?.permissionMode === 'group' ? 'group' : 'profile'
-
-  const groupCounts = useMemo(() => {
-    const map = new Map<string, number>()
-    for (const member of members) {
-      if (member.userGroupId) map.set(member.userGroupId, (map.get(member.userGroupId) ?? 0) + 1)
-    }
-    return map
+  const currentMember = members.find((member) => member.userId === user?.id) ?? null
+  const isWorkspaceOwner = currentMember?.role === 'owner' || currentWorkspace?.ownerId === user?.id
+  const canManageUserGroups = isWorkspaceOwner
+  const authorizationMode: AuthorizationMode = currentWorkspace?.settings?.permissionMode === 'group' ? 'group' : 'profile'
+  // ✅ Manageable members = active non-owner members only
+  const manageableMembers = useMemo(() => {
+    return members.filter((member) => member.role !== 'owner' && member.status === 'active')
   }, [members])
 
+  // ✅ Group counts = only count manageable members
+  const groupCounts = useMemo(() => {
+    const map = new Map<string, number>()
+    for (const member of manageableMembers) {
+      if (member.userGroupId) {
+        map.set(member.userGroupId, (map.get(member.userGroupId) ?? 0) + 1)
+      }
+    }
+    return map
+  }, [manageableMembers])
+
+  // ✅ Filtered members = manageable members filtered by selected group
   const filteredMembers = useMemo(() => {
     const q = searchQuery.trim().toLowerCase()
-    return members.filter((member) => {
+    return manageableMembers.filter((member) => {
+      // Filter by selected group - normalize both to strings for comparison
       const matchesGroup = selectedGroup
-        ? member.userGroupId === selectedGroup || (!member.userGroupId && userGroups.length === 1 && selectedGroup === userGroups[0].id)
-        : false
+        ? String(member.userGroupId) === String(selectedGroup)
+        : true
+      // Filter by search query
       const matchesSearch = !q || member.email.toLowerCase().includes(q) || (member.displayName ?? '').toLowerCase().includes(q)
       return matchesGroup && matchesSearch
     })
-  }, [members, searchQuery, selectedGroup, userGroups])
+  }, [manageableMembers, searchQuery, selectedGroup])
 
   const filteredInvitations = useMemo(() => {
     const q = searchQuery.trim().toLowerCase()
@@ -220,7 +245,7 @@ export default function MembersPage() {
               <h3 className="whitespace-nowrap text-[17px] font-extrabold leading-tight text-white">Nhóm người dùng</h3>
               <p className="mt-1 text-xs font-medium text-[#8EA0B5]">{userGroups.length} nhóm</p>
             </div>
-            {canEditRole && (
+            {canManageUserGroups && (
               <button onClick={() => setShowGroupModal(true)} className="flex h-8 items-center gap-1.5 rounded-lg bg-white px-3 text-xs font-bold text-[#111827] transition-colors hover:bg-[#E5E7EB]">
                 <PlusIcon className="h-4 w-4" />
                 Mới
@@ -235,16 +260,24 @@ export default function MembersPage() {
               {userGroups.map((group) => (
                 <div key={group.id} className="group relative">
                   <GroupFilter label={group.name} active={selectedGroup === group.id} onClick={() => setSelectedGroup(group.id)} />
-                  {canEditRole && (
+                  {canManageUserGroups && (
                     <div className="absolute right-2 top-1/2 hidden -translate-y-1/2 gap-1 group-hover:flex">
                       <button onClick={() => setEditingGroup(group)} className="flex h-6 w-6 items-center justify-center rounded text-[#8EA0B5] hover:bg-white/10 hover:text-white" title="Sửa">
                         <EditMiniIcon className="h-3.5 w-3.5" />
                       </button>
                       <button
-                        onClick={() => {
+                        onClick={async () => {
                           const count = groupCounts.get(group.id) ?? 0
-                          if (count > 0 && !confirm(`Nhóm "${group.name}" đang có ${count} thành viên. Vẫn xóa nhóm?`)) return
-                          deleteUserGroup(group.id).catch((err) => toast.error(err instanceof Error ? err.message : 'Không thể xóa nhóm'))
+                          const message = count > 0
+                            ? `Nhóm "${group.name}" đang có ${count} thành viên. Vẫn xóa nhóm?`
+                            : `Xóa nhóm "${group.name}"?`
+
+                          const confirmed = await dialog.confirmDelete('Xóa nhóm người dùng', message)
+                          if (confirmed) {
+                            deleteUserGroup(group.id).catch((err) =>
+                              toast.error(err instanceof Error ? err.message : 'Không thể xóa nhóm')
+                            )
+                          }
                         }}
                         className="flex h-6 w-6 items-center justify-center rounded text-red-400 hover:bg-red-500/10"
                         title="Xóa"
@@ -307,6 +340,8 @@ export default function MembersPage() {
                 loading={membersLoading || loading}
                 canEditRole={canEditRole}
                 canRemove={canRemove}
+                selectedGroup={selectedGroup}
+                userGroups={userGroups}
                 onEdit={setEditingMember}
                 onRemove={async (memberId) => {
                   try {
@@ -359,8 +394,8 @@ export default function MembersPage() {
           userGroups={userGroups}
           profiles={profiles}
           profileGroups={profileGroups}
+          authorizationMode={authorizationMode}
           initialGroupId={selectedGroup}
-          permissionMode={permissionMode}
           onClose={() => setShowInviteModal(false)}
           onInvite={async (input) => {
             try {
@@ -374,7 +409,7 @@ export default function MembersPage() {
           }}
         />
       )}
-      {showGroupModal && (
+      {showGroupModal && canManageUserGroups && (
         <GroupModal
           onClose={() => setShowGroupModal(false)}
           onSave={async (name, description) => {
@@ -385,7 +420,7 @@ export default function MembersPage() {
           }}
         />
       )}
-      {editingGroup && (
+      {editingGroup && canManageUserGroups && (
         <GroupModal
           group={editingGroup}
           onClose={() => setEditingGroup(null)}
@@ -402,7 +437,8 @@ export default function MembersPage() {
           userGroups={userGroups}
           profiles={profiles}
           profileGroups={profileGroups}
-          permissionMode={permissionMode}
+          authorizationMode={authorizationMode}
+          getMemberAuthorizations={getMemberAuthorizations}
           onClose={() => setEditingMember(null)}
           onSave={async (input) => {
             try {
@@ -494,6 +530,8 @@ function MembersTab({
   canRemove,
   onEdit,
   onRemove,
+  selectedGroup,
+  userGroups,
 }: {
   members: WorkspaceMember[]
   currentUserId: string
@@ -502,8 +540,27 @@ function MembersTab({
   canRemove: boolean
   onEdit: (member: WorkspaceMember) => void
   onRemove: (memberId: string) => Promise<void>
+  selectedGroup: string | null
+  userGroups: WorkspaceUserGroup[]
 }) {
   if (loading) return <TableSkeleton columns={8} rows={6} />
+
+  // ✅ Better empty state messages
+  const getEmptyMessage = () => {
+    if (userGroups.length === 0) {
+      return { title: 'Chưa có nhóm người dùng', description: 'Bạn cần tạo nhóm người dùng trước khi mời thành viên.' }
+    }
+    if (selectedGroup) {
+      const groupName = userGroups.find(g => g.id === selectedGroup)?.name ?? 'này'
+      return { title: 'Nhóm này chưa có thành viên', description: `Mời thành viên vào nhóm ${groupName} để bắt đầu.` }
+    }
+    return { title: 'Chưa có thành viên nào', description: 'Mời thành viên vào workspace để cộng tác.' }
+  }
+
+  if (members.length === 0) {
+    const emptyMsg = getEmptyMessage()
+    return <EmptyState title={emptyMsg.title} description={emptyMsg.description} />
+  }
 
   return (
     <div className="flex min-h-[590px] flex-col">
@@ -531,7 +588,15 @@ function MembersTab({
                       {canEditRole && !isOwner && <button onClick={() => onEdit(member)} className="text-sm text-blue-400 hover:text-blue-300">Edit</button>}
                       {canRemove && !isOwner && !isSelf && (
                         <button
-                          onClick={() => confirm(`Xóa ${member.email} khỏi workspace?`) && onRemove(member.id)}
+                          onClick={async () => {
+                            const confirmed = await dialog.confirmDelete(
+                              'Xóa thành viên',
+                              `Xóa ${member.email} khỏi workspace?`
+                            )
+                            if (confirmed) {
+                              onRemove(member.id)
+                            }
+                          }}
                           className="text-sm text-red-400 hover:text-red-300"
                         >
                           Remove
@@ -545,7 +610,6 @@ function MembersTab({
           </tbody>
         </table>
       </div>
-      {members.length === 0 && <EmptyState title="No Data" description="" />}
     </div>
   )
 }
@@ -681,24 +745,34 @@ function PermissionsTab({ rolePermissions, currentPermissions, canEdit, onSave }
   )
 }
 
-function InviteMemberModal({ userGroups, profiles, profileGroups, initialGroupId, permissionMode, onClose, onInvite }: {
+function InviteMemberModal({ userGroups, profiles, profileGroups, authorizationMode, initialGroupId, onClose, onInvite }: {
   userGroups: WorkspaceUserGroup[]
   profiles: Profile[]
   profileGroups: Group[]
+  authorizationMode: AuthorizationMode
   initialGroupId: string | null
-  permissionMode: WorkspacePermissionMode
   onClose: () => void
-  onInvite: (input: { email: string; role: Exclude<WorkspaceRole, 'owner'>; userGroupId: string | null; profileLimit: number | null; note: string }) => Promise<void>
+  onInvite: (input: { email: string; role: Exclude<WorkspaceRole, 'owner'>; userGroupId: string | null; profileLimit: number | null; note: string; profileIds: string[]; groupIds: string[] }) => Promise<void>
 }) {
   const [name, setName] = useState('')
   const [email, setEmail] = useState('')
   const [role, setRole] = useState<Exclude<WorkspaceRole, 'owner'>>('member')
   const [userGroupId, setUserGroupId] = useState(initialGroupId ?? '')
-  const [authorizationIds, setAuthorizationIds] = useState<string[]>([])
+  const [profileIds, setProfileIds] = useState<string[]>([])
+  const [groupIds, setGroupIds] = useState<string[]>([])
   const [profileLimit, setProfileLimit] = useState('')
   const [note, setNote] = useState('')
   const [loading, setLoading] = useState(false)
   const validEmail = /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email.trim())
+
+  // ✅ Check if no user groups exist
+  const hasNoGroups = userGroups.length === 0
+  const canSubmit = validEmail && userGroupId && !hasNoGroups
+  const validationMessage = hasNoGroups
+    ? 'Bạn cần tạo Nhóm người dùng trước khi mời thành viên.'
+    : !userGroupId
+      ? 'Vui lòng chọn nhóm người dùng cho thành viên'
+      : null
 
   return (
     <MemberFormModal
@@ -719,18 +793,30 @@ function InviteMemberModal({ userGroups, profiles, profileGroups, initialGroupId
       userGroups={userGroups}
       profiles={profiles}
       profileGroups={profileGroups}
-      permissionMode={permissionMode}
-      authorizationIds={authorizationIds}
-      setAuthorizationIds={setAuthorizationIds}
+      authorizationMode={authorizationMode}
+      profileIds={profileIds}
+      setProfileIds={setProfileIds}
+      groupIds={groupIds}
+      setGroupIds={setGroupIds}
       loading={loading}
-      submitDisabled={!validEmail}
+      submitDisabled={!canSubmit}
       submitLabel="OK"
+      noGroupsWarning={hasNoGroups}
+      validationMessage={validationMessage}
       onClose={onClose}
       onSubmit={async () => {
-        if (!validEmail) return
+        if (!canSubmit) return
         setLoading(true)
         try {
-          await onInvite({ email: email.trim().toLowerCase(), role, userGroupId: userGroupId || null, profileLimit: profileLimit ? Number(profileLimit) : null, note: note.trim() })
+          await onInvite({
+            email: email.trim().toLowerCase(),
+            role,
+            userGroupId,
+            profileLimit: profileLimit ? Number(profileLimit) : null,
+            note: note.trim(),
+            profileIds: authorizationMode === 'profile' ? profileIds : [],
+            groupIds: authorizationMode === 'group' ? groupIds : [],
+          })
         } finally {
           setLoading(false)
         }
@@ -739,23 +825,40 @@ function InviteMemberModal({ userGroups, profiles, profileGroups, initialGroupId
   )
 }
 
-function EditMemberModal({ member, userGroups, profiles, profileGroups, permissionMode, onClose, onSave }: {
+function EditMemberModal({ member, userGroups, profiles, profileGroups, authorizationMode, getMemberAuthorizations, onClose, onSave }: {
   member: WorkspaceMember
   userGroups: WorkspaceUserGroup[]
   profiles: Profile[]
   profileGroups: Group[]
-  permissionMode: WorkspacePermissionMode
+  authorizationMode: AuthorizationMode
+  getMemberAuthorizations: (memberId: string) => Promise<{ profileIds: string[]; groupIds: string[] }>
   onClose: () => void
-  onSave: (input: { role: Exclude<WorkspaceRole, 'owner'>; userGroupId: string | null; profileLimit: number | null; note: string }) => Promise<void>
+  onSave: (input: { role: Exclude<WorkspaceRole, 'owner'>; userGroupId: string | null; profileLimit: number | null; note: string; profileIds: string[]; groupIds: string[] }) => Promise<void>
 }) {
   const [name, setName] = useState(member.displayName || member.email.split('@')[0])
   const [email, setEmail] = useState(member.email)
   const [role, setRole] = useState<Exclude<WorkspaceRole, 'owner'>>(member.role === 'owner' ? 'member' : member.role)
   const [userGroupId, setUserGroupId] = useState(member.userGroupId ?? '')
-  const [authorizationIds, setAuthorizationIds] = useState<string[]>([])
+  const [profileIds, setProfileIds] = useState<string[]>([])
+  const [groupIds, setGroupIds] = useState<string[]>([])
   const [profileLimit, setProfileLimit] = useState(member.profileLimit?.toString() ?? '')
   const [note, setNote] = useState(member.note)
   const [loading, setLoading] = useState(false)
+  const validationMessage = !userGroupId ? 'Vui lòng chọn nhóm người dùng cho thành viên' : null
+
+  useEffect(() => {
+    let cancelled = false
+    getMemberAuthorizations(member.id)
+      .then((auth) => {
+        if (cancelled) return
+        setProfileIds(auth.profileIds)
+        setGroupIds(auth.groupIds)
+      })
+      .catch((error) => toast.error(error instanceof Error ? error.message : 'Không thể tải quyền hồ sơ'))
+    return () => {
+      cancelled = true
+    }
+  }, [getMemberAuthorizations, member.id])
 
   return (
     <MemberFormModal
@@ -776,16 +879,27 @@ function EditMemberModal({ member, userGroups, profiles, profileGroups, permissi
       userGroups={userGroups}
       profiles={profiles}
       profileGroups={profileGroups}
-      permissionMode={permissionMode}
-      authorizationIds={authorizationIds}
-      setAuthorizationIds={setAuthorizationIds}
+      authorizationMode={authorizationMode}
+      profileIds={profileIds}
+      setProfileIds={setProfileIds}
+      groupIds={groupIds}
+      setGroupIds={setGroupIds}
       loading={loading}
       submitLabel="OK"
+      submitDisabled={!userGroupId}
+      validationMessage={validationMessage}
       onClose={onClose}
       onSubmit={async () => {
         setLoading(true)
         try {
-          await onSave({ role, userGroupId: userGroupId || null, profileLimit: profileLimit ? Number(profileLimit) : null, note: note.trim() })
+          await onSave({
+            role,
+            userGroupId,
+            profileLimit: profileLimit ? Number(profileLimit) : null,
+            note: note.trim(),
+            profileIds: authorizationMode === 'profile' ? profileIds : [],
+            groupIds: authorizationMode === 'group' ? groupIds : [],
+          })
         } finally {
           setLoading(false)
         }
@@ -812,12 +926,16 @@ function MemberFormModal({
   userGroups,
   profiles,
   profileGroups,
-  permissionMode,
-  authorizationIds,
-  setAuthorizationIds,
+  authorizationMode,
+  profileIds,
+  setProfileIds,
+  groupIds,
+  setGroupIds,
   loading,
   submitDisabled,
   submitLabel,
+  noGroupsWarning,
+  validationMessage,
   onClose,
   onSubmit,
 }: {
@@ -838,20 +956,19 @@ function MemberFormModal({
   userGroups: WorkspaceUserGroup[]
   profiles: Profile[]
   profileGroups: Group[]
-  permissionMode: WorkspacePermissionMode
-  authorizationIds: string[]
-  setAuthorizationIds: (value: string[]) => void
+  authorizationMode: AuthorizationMode
+  profileIds: string[]
+  setProfileIds: (value: string[]) => void
+  groupIds: string[]
+  setGroupIds: (value: string[]) => void
   loading: boolean
   submitDisabled?: boolean
   submitLabel: string
+  noGroupsWarning?: boolean
+  validationMessage?: string | null
   onClose: () => void
   onSubmit: () => Promise<void>
 }) {
-  const authorizationLabel = permissionMode === 'group' ? 'Ủy quyền nhóm hồ sơ' : 'Ủy quyền hồ sơ'
-  const authorizationItems = permissionMode === 'group'
-    ? profileGroups.map((group) => ({ id: group.id, label: group.name }))
-    : profiles.map((profile) => ({ id: profile.id, label: profile.name }))
-
   return (
     <Modal title={title} onClose={onClose} size="member">
       <form
@@ -861,6 +978,22 @@ function MemberFormModal({
         }}
         className="space-y-6"
       >
+        {noGroupsWarning && (
+          <div className="rounded-lg border border-amber-500/30 bg-amber-500/10 p-4">
+            <p className="text-sm font-semibold text-amber-200">
+              ⚠️ Bạn cần tạo Nhóm người dùng trước khi mời thành viên.
+            </p>
+            <p className="mt-2 text-sm text-amber-300/80">
+              Mỗi thành viên phải thuộc một nhóm người dùng để quản lý quyền truy cập.
+            </p>
+          </div>
+        )}
+        {validationMessage && !noGroupsWarning && (
+          <div className="rounded-lg border border-amber-500/30 bg-amber-500/10 p-4">
+            <p className="text-sm font-semibold text-amber-200">{validationMessage}</p>
+          </div>
+        )}
+
         <div className="grid grid-cols-[120px_minmax(0,1fr)] gap-x-6 gap-y-5">
           <label className="pt-2 text-sm font-bold text-white">Tên nhóm</label>
           <UserGroupSelect userGroups={userGroups} value={userGroupId} onChange={setUserGroupId} />
@@ -887,14 +1020,31 @@ function MemberFormModal({
             </p>
           </div>
 
-          <label className="pt-2 text-sm font-bold text-white">{authorizationLabel}</label>
+          {authorizationMode === 'group' && (
+          <>
+          <label className="pt-2 text-sm font-bold text-white">Nhóm hồ sơ được phép</label>
           <AuthorizationPicker
-            items={authorizationItems}
-            selectedIds={authorizationIds}
-            onChange={setAuthorizationIds}
-            emptyText={permissionMode === 'group' ? 'Chưa có nhóm hồ sơ' : 'Chưa có hồ sơ'}
-            placeholder={permissionMode === 'group' ? '+ nhóm hồ sơ' : '+ hồ sơ'}
+            items={profileGroups.map((group) => ({ id: group.id, label: group.name }))}
+            selectedIds={groupIds}
+            onChange={setGroupIds}
+            emptyText="Chưa có nhóm hồ sơ"
+            placeholder="+ nhóm hồ sơ"
           />
+          </>
+          )}
+
+          {authorizationMode === 'profile' && (
+          <>
+          <label className="pt-2 text-sm font-bold text-white">Hồ sơ được phép</label>
+          <AuthorizationPicker
+            items={profiles.map((profile) => ({ id: profile.id, label: profile.name }))}
+            selectedIds={profileIds}
+            onChange={setProfileIds}
+            emptyText="Chưa có hồ sơ"
+            placeholder="+ hồ sơ"
+          />
+          </>
+          )}
 
           <label className="pt-2 text-sm font-bold text-white">Giới hạn nhập hồ sơ</label>
           <input type="number" min="0" value={profileLimit} onChange={(event) => setProfileLimit(event.target.value)} placeholder="Nếu để trống sẽ không giới hạn số hồ sơ mà thành viên sử dụng" className="mkt-input h-10 px-3 text-sm placeholder:text-[#64748B]" />

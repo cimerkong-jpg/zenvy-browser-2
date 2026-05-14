@@ -3,6 +3,8 @@ import { createPortal } from 'react-dom'
 import type { Group, Profile } from '../../../shared/types'
 import { useStore } from '../store/useStore'
 import { useWorkspace } from '../store/useWorkspace'
+import { toast } from '../store/useToast'
+import { dialog } from '../store/useDialog'
 import ContextMenu, { type ContextMenuItem } from './ContextMenu'
 import CookieManager from './CookieManager'
 import { getDisplayId } from '../utils/profileId'
@@ -67,7 +69,7 @@ export default function ProfileRow({
       } else {
         const result = await window.api.browser.launch(profile)
         if (!result?.success && result?.error) {
-          alert(result.error)
+          toast.error(result.error)
         }
       }
       useStore.getState().setRunningIds(await window.api.browser.running())
@@ -78,9 +80,22 @@ export default function ProfileRow({
 
   const handleDelete = async () => {
     if (!hasPermission('profile.delete')) return
-    if (!confirm(`Xóa profile "${profile.name}"?`)) return
-    await window.api.profiles.delete(profile.id)
-    await loadAll()
+
+    const confirmed = await dialog.confirmDelete(
+      'Xóa profile',
+      `Xóa profile "${profile.name}"?`
+    )
+
+    if (confirmed) {
+      try {
+        await window.api.profiles.delete(profile.id)
+        await loadAll()
+        return toast.success('Đã xóa profile')
+      } catch (error) {
+        return toast.error(error instanceof Error ? error.message : 'Không thể xóa profile')
+      }
+      toast.success('Đã xóa profile')
+    }
   }
 
   const handleDuplicate = async () => {
@@ -158,7 +173,7 @@ export default function ProfileRow({
 
         {/* ID */}
         <td className="px-4 py-3">
-          <span 
+          <span
             className="font-mono text-xs text-[#9CA3AF] select-text cursor-text"
             title={profile.id}
           >
@@ -220,7 +235,7 @@ export default function ProfileRow({
         <td className="max-w-[200px] px-4 py-3">
           <div className="flex items-center gap-2">
             {profile.notes ? (
-              <span 
+              <span
                 className="block truncate text-xs text-[#9CA3AF] select-text cursor-text flex-1 min-w-0"
                 title={profile.notes}
               >
@@ -264,7 +279,7 @@ export default function ProfileRow({
         {/* Proxy */}
         <td className="px-4 py-3">
           {proxyDisplay ? (
-            <span 
+            <span
               className="font-mono text-xs text-[#9CA3AF] select-text cursor-text"
               title={`${profile.proxy.type.toUpperCase()} - ${proxyDisplay}`}
             >

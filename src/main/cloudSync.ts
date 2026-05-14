@@ -282,18 +282,23 @@ export async function pushGroup(group: Group): Promise<void> {
   await pushGroups([group], userId, workspaceId)
 }
 
-export async function deleteGroup(groupId: string): Promise<void> {
+export async function deleteGroup(groupId: string): Promise<CloudGroup> {
   const userId = await getUserId()
   const workspaceId = getCurrentWorkspaceId()
-  if (!userId || !workspaceId || !isUuid(groupId) || !(await hasPermission('group.delete', workspaceId))) return
+  if (!userId || !workspaceId || !isUuid(groupId) || !(await hasPermission('group.delete', workspaceId))) {
+    throw new Error('Không tìm thấy nhóm hồ sơ hoặc bạn không có quyền xóa')
+  }
 
-  const { error } = await getSupabase()
+  const { data, error } = await getSupabase()
     .from('groups')
-    .update({ deleted_at: new Date().toISOString() })
+    .delete()
     .eq('id', groupId)
     .eq('workspace_id', workspaceId)
+    .select('*')
+    .single()
 
-  if (error) throw error
+  if (error || !data) throw new Error('Không tìm thấy nhóm hồ sơ hoặc bạn không có quyền xóa')
+  return data as CloudGroup
 }
 
 export async function pushProfile(profile: Profile): Promise<void> {
@@ -303,33 +308,44 @@ export async function pushProfile(profile: Profile): Promise<void> {
   await pushProfiles([profile], userId, workspaceId)
 }
 
-export async function deleteProfile(profileId: string): Promise<void> {
+export async function deleteProfile(profileId: string): Promise<CloudProfile> {
   const userId = await getUserId()
   const workspaceId = getCurrentWorkspaceId()
-  if (!userId || !workspaceId || !isUuid(profileId) || !(await hasPermission('profile.delete', workspaceId))) return
+  if (!userId || !workspaceId || !isUuid(profileId) || !(await hasPermission('profile.delete', workspaceId))) {
+    throw new Error('Không tìm thấy hồ sơ hoặc bạn không có quyền xóa')
+  }
 
-  const { error } = await getSupabase()
+  const { data, error } = await getSupabase()
     .from('profiles')
-    .update({ deleted_at: new Date().toISOString() })
+    .delete()
     .eq('id', profileId)
     .eq('workspace_id', workspaceId)
+    .select('*')
+    .single()
 
-  if (error) throw error
+  if (error || !data) throw new Error('Không tìm thấy hồ sơ hoặc bạn không có quyền xóa')
+  return data as CloudProfile
 }
 
-export async function deleteProfiles(profileIds: string[]): Promise<void> {
+export async function deleteProfiles(profileIds: string[]): Promise<CloudProfile[]> {
   const userId = await getUserId()
   const workspaceId = getCurrentWorkspaceId()
   const ids = profileIds.filter(isUuid)
-  if (!userId || !workspaceId || ids.length === 0 || !(await hasPermission('profile.delete', workspaceId))) return
+  if (!userId || !workspaceId || ids.length === 0 || !(await hasPermission('profile.delete', workspaceId))) {
+    throw new Error('Không tìm thấy hồ sơ hoặc bạn không có quyền xóa')
+  }
 
-  const { error } = await getSupabase()
+  const { data, error } = await getSupabase()
     .from('profiles')
-    .update({ deleted_at: new Date().toISOString() })
+    .delete()
     .in('id', ids)
     .eq('workspace_id', workspaceId)
+    .select('*')
 
-  if (error) throw error
+  if (error) throw new Error('Không tìm thấy hồ sơ hoặc bạn không có quyền xóa')
+  const deletedRows = (data ?? []) as CloudProfile[]
+  if (deletedRows.length !== ids.length) throw new Error('Không tìm thấy hồ sơ hoặc bạn không có quyền xóa')
+  return deletedRows
 }
 
 export async function pullCookies(profileId: string): Promise<Cookie[]> {

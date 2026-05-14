@@ -1,6 +1,6 @@
 import { getSupabase, isSupabaseConfigured } from './supabase'
 import { saveSession, getSession, clearSession } from './sessionStorage'
-import type { User, Session } from '@supabase/supabase-js'
+import type { AuthError } from '@supabase/supabase-js'
 
 export interface AuthUser {
   id: string
@@ -13,6 +13,16 @@ export interface AuthSession {
   accessToken: string
   refreshToken: string
   expiresAt: number
+}
+
+function describeAuthError(error: AuthError): string {
+  const details = [
+    error.message,
+    error.name ? `Name: ${error.name}` : null,
+    error.status ? `Status: ${error.status}` : null,
+    error.code ? `Code: ${error.code}` : null,
+  ].filter(Boolean)
+  return details.join(' | ')
 }
 
 /**
@@ -32,12 +42,12 @@ export async function restoreSession(): Promise<AuthSession | null> {
 
   try {
     const supabase = getSupabase()
-    
+
     // Add timeout to prevent hanging
     const timeoutPromise = new Promise<never>((_, reject) => {
       setTimeout(() => reject(new Error('Session restore timeout')), 5000)
     })
-    
+
     // Restore session in Supabase with timeout
     const sessionPromise = supabase.auth.setSession({
       access_token: savedSession.access_token,
@@ -59,7 +69,7 @@ export async function restoreSession(): Promise<AuthSession | null> {
     }
 
     console.log('[Auth] Session restored successfully')
-    
+
     // Update saved session with refreshed tokens
     const newSessionData = {
       access_token: data.session.access_token,
@@ -106,12 +116,20 @@ export async function signUp(email: string, password: string): Promise<{ user: A
     })
 
     if (error) {
+      console.error('[Auth:signUp] Supabase signUp failed:', describeAuthError(error), error)
       return { user: null, error: error.message }
     }
 
     if (!data.user) {
+      console.error('[Auth:signUp] Supabase signUp returned no user:', data)
       return { user: null, error: 'No user returned' }
     }
+
+    console.log('[Auth:signUp] Supabase signUp succeeded:', {
+      userId: data.user.id,
+      email: data.user.email,
+      hasSession: Boolean(data.session),
+    })
 
     return {
       user: {
@@ -122,6 +140,7 @@ export async function signUp(email: string, password: string): Promise<{ user: A
       error: null,
     }
   } catch (err) {
+    console.error('[Auth:signUp] Unexpected signUp failure:', err)
     return { user: null, error: (err as Error).message }
   }
 }
@@ -255,7 +274,7 @@ export async function getCurrentUser(): Promise<AuthUser | null> {
     const timeoutPromise = new Promise<null>((resolve) => {
       setTimeout(() => resolve(null), 3000)
     })
-    
+
     const currentSession = await Promise.race([getCurrentSession(), timeoutPromise])
     return currentSession?.user || null
   } catch (err) {
@@ -281,10 +300,10 @@ export function onAuthStateChange(callback: (user: AuthUser | null) => void): ()
   }
 
   const supabase = getSupabase()
-  
+
   const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
     console.log('[Auth] State changed:', event)
-    
+
     if (session?.user) {
       // Save session on change
       const sessionData = {
@@ -298,7 +317,7 @@ export function onAuthStateChange(callback: (user: AuthUser | null) => void): ()
         }
       }
       saveSession(sessionData)
-      
+
       callback({
         id: session.user.id,
         email: session.user.email!,

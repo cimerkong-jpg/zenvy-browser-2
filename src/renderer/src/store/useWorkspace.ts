@@ -7,6 +7,7 @@ import type {
   RolePermissionMap,
   UpdateWorkspaceMemberInput,
   Workspace,
+  WorkspaceMemberAuthorizations,
   WorkspaceInvitation,
   WorkspaceMember,
   WorkspaceRole,
@@ -88,6 +89,8 @@ interface WorkspaceState {
   resendInvitation: (invitationId: string) => Promise<void>
   updateMemberRole: (memberId: string, role: WorkspaceRole) => Promise<void>
   updateMember: (memberId: string, input: UpdateWorkspaceMemberInput) => Promise<void>
+  getMemberAuthorizations: (memberId: string) => Promise<WorkspaceMemberAuthorizations>
+  updateMemberAuthorizations: (memberId: string, input: WorkspaceMemberAuthorizations) => Promise<WorkspaceMemberAuthorizations>
   removeMember: (memberId: string) => Promise<void>
   getMyPermissions: () => Promise<RolePermissionMap>
   getRolePermissions: () => Promise<Record<WorkspaceRole, RolePermissionMap>>
@@ -136,7 +139,14 @@ export const useWorkspace = create<WorkspaceState>()(
           const api = getWorkspaceApi()
           if (!api?.switchWorkspace) throw reportMissingWorkspaceApi('switchWorkspace')
           await api.switchWorkspace(workspaceId)
-          await get().refreshWorkspaceData()
+
+          // ✅ Always reload permissions from Supabase
+          await get().getMyPermissions()
+          await get().loadMembers()
+          await get().loadUserGroups()
+          if (get().permissions['member.invite']) {
+            await get().loadInvitations()
+          }
         } catch (error) {
           const normalized = readableError(error, 'Failed to switch workspace')
           set({ error: normalized.message })
@@ -308,10 +318,10 @@ export const useWorkspace = create<WorkspaceState>()(
           const api = getWorkspaceApi()
           if (!api?.deleteWorkspace) throw reportMissingWorkspaceApi('deleteWorkspace')
           const result = await api.deleteWorkspace(workspaceId)
-          
+
           // Refresh workspace list
           await get().loadWorkspaces()
-          
+
           // If we switched to a different workspace, update current workspace
           if (result.switchedToWorkspaceId) {
             const newWorkspace = get().workspaces.find((w) => w.id === result.switchedToWorkspaceId)
@@ -349,7 +359,12 @@ export const useWorkspace = create<WorkspaceState>()(
         const api = getWorkspaceApi()
         if (!api?.inviteMember) throw reportMissingWorkspaceApi('inviteMember')
         await api.inviteMember({ ...input, workspaceId })
+
+        // ✅ Reload everything after invite
+        await get().loadMembers()
         await get().loadInvitations()
+        await get().loadWorkspaces()
+        await get().getMyPermissions()
       },
 
       revokeInvitation: async (invitationId) => {
@@ -370,21 +385,69 @@ export const useWorkspace = create<WorkspaceState>()(
         const api = getWorkspaceApi()
         if (!api?.updateMemberRole) throw reportMissingWorkspaceApi('updateMemberRole')
         await api.updateMemberRole(memberId, role)
+
+        // ✅ Reload everything
         await get().loadMembers()
+        await get().loadInvitations()
+        await get().loadWorkspaces()
+        await get().getMyPermissions()
       },
 
       updateMember: async (memberId, input) => {
         const api = getWorkspaceApi()
         if (!api?.updateMember) throw reportMissingWorkspaceApi('updateMember')
         await api.updateMember(memberId, input)
+
+        // ✅ Reload everything
         await get().loadMembers()
+        await get().loadInvitations()
+        await get().loadWorkspaces()
+        await get().getMyPermissions()
+      },
+
+      getMemberAuthorizations: async (memberId) => {
+        const api = getWorkspaceApi()
+        if (!api?.getMemberAuthorizations) throw reportMissingWorkspaceApi('getMemberAuthorizations')
+        return api.getMemberAuthorizations(memberId)
+      },
+
+      updateMemberAuthorizations: async (memberId, input) => {
+        const api = getWorkspaceApi()
+        if (!api?.updateMemberAuthorizations) throw reportMissingWorkspaceApi('updateMemberAuthorizations')
+        const result = await api.updateMemberAuthorizations(memberId, input)
+        await get().loadMembers()
+        return result
       },
 
       removeMember: async (memberId) => {
         const api = getWorkspaceApi()
         if (!api?.removeMember) throw reportMissingWorkspaceApi('removeMember')
         await api.removeMember(memberId)
+
+        // ✅ Reload everything
         await get().loadMembers()
+        await get().loadInvitations()
+        await get().loadWorkspaces()
+        await get().getMyPermissions()
+
+        // ✅ Check if current workspace still valid
+        const { workspaces, currentWorkspaceId } = get()
+        if (currentWorkspaceId && !workspaces.find(w => w.id === currentWorkspaceId)) {
+          // Current workspace no longer accessible
+          set({
+            currentWorkspace: null,
+            currentWorkspaceId: null,
+            currentRole: null,
+            permissions: DefaultRolePermissionMap.viewer
+          })
+
+          // Switch to first available workspace
+          if (workspaces.length > 0) {
+            await get().setCurrentWorkspace(workspaces[0].id)
+          } else {
+            await get().ensureDefaultWorkspace()
+          }
+        }
       },
 
       getMyPermissions: async () => {
@@ -446,7 +509,32 @@ export const useWorkspace = create<WorkspaceState>()(
         const api = getWorkspaceApi()
         if (!api?.deleteUserGroup) throw reportMissingWorkspaceApi('deleteUserGroup')
         await api.deleteUserGroup(id)
+
+        // ✅ Reload everything after deleting group
         await get().loadUserGroups()
+        await get().loadMembers()
+        await get().loadInvitations()
+        await get().loadWorkspaces()
+        await get().getMyPermissions()
+
+        // ✅ Check if current workspace still valid
+        const { workspaces, currentWorkspaceId } = get()
+        if (currentWorkspaceId && !workspaces.find(w => w.id === currentWorkspaceId)) {
+          // Current workspace no longer accessible
+          set({
+            currentWorkspace: null,
+            currentWorkspaceId: null,
+            currentRole: null,
+            permissions: DefaultRolePermissionMap.viewer
+          })
+
+          // Switch to first available workspace
+          if (workspaces.length > 0) {
+            await get().setCurrentWorkspace(workspaces[0].id)
+          } else {
+            await get().ensureDefaultWorkspace()
+          }
+        }
       },
 
       reset: () => set({

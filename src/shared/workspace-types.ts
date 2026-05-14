@@ -116,6 +116,8 @@ export interface InviteMemberInput {
   userGroupId?: string | null
   profileLimit?: number | null
   note?: string
+  profileIds?: string[]
+  groupIds?: string[]
 }
 
 export interface CreateWorkspaceInput {
@@ -134,6 +136,13 @@ export interface UpdateWorkspaceMemberInput {
   userGroupId?: string | null
   profileLimit?: number | null
   note?: string
+  profileIds?: string[]
+  groupIds?: string[]
+}
+
+export interface WorkspaceMemberAuthorizations {
+  profileIds: string[]
+  groupIds: string[]
 }
 
 export const PermissionKeys: PermissionKey[] = [
@@ -234,17 +243,17 @@ export const DefaultRolePermissionMap: Record<WorkspaceRole, RolePermissionMap> 
 }
 
 export const RoleLabels: Record<WorkspaceRole, string> = {
-  owner: 'Owner',
-  admin: 'Admin',
-  member: 'Member',
-  viewer: 'Viewer',
+  owner: 'OWNER',
+  admin: 'ADMIN',
+  member: 'MANAGER',
+  viewer: 'MEMBER',
 }
 
 export const RoleDescriptions: Record<WorkspaceRole, string> = {
   owner: 'Full access. Cannot be downgraded or removed.',
   admin: 'Manage data, members, and workspace settings except billing/delete.',
-  member: 'Create and edit workspace data, without destructive member access.',
-  viewer: 'Read-only workspace access.',
+  member: 'Manager access backed by the database member role.',
+  viewer: 'Member access backed by the database viewer role.',
 }
 
 export const PermissionLabels: Record<PermissionKey, string> = {

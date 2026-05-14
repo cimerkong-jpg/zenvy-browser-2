@@ -2,7 +2,8 @@ import { useEffect, useState, useCallback, useRef } from 'react'
 import type { AutomationScript, ScriptExecution, ScheduledTask, TaskHistoryRecord, Profile } from '../../../../shared/types'
 import type { AutoSub } from '../App'
 import { useStore } from '../store/useStore'
-import { toast, dialog } from '../store/useToast'
+import { toast } from '../store/useToast'
+import { dialog } from '../store/useDialog'
 import ScriptEditor from '../components/ScriptEditor'
 import ActionLibrary from '../components/ActionLibrary'
 import EditorEmptyState from '../components/EditorEmptyState'
@@ -688,11 +689,12 @@ export default function AutomationPage({ subPage }: { subPage: AutoSub }) {
     setIsDirty(false); setExecutions([]); setVarsOverride({})
   }
 
-  const backToGrid = () => {
+  const backToGrid = async () => {
     if (isDirty) {
-      dialog.confirm('Bỏ thay đổi?', 'Bạn có thay đổi chưa lưu. Thoát editor không?', () => {
+      const confirmed = await dialog.confirm('Bỏ thay đổi?', 'Bạn có thay đổi chưa lưu. Thoát editor không?')
+      if (confirmed) {
         setEditorMode(false); setSelected(null); setIsNew(false); setIsDirty(false); setEditMode(false)
-      })
+      }
     } else {
       setEditorMode(false); setSelected(null); setIsNew(false); setEditMode(false)
     }
@@ -715,11 +717,14 @@ export default function AutomationPage({ subPage }: { subPage: AutoSub }) {
     else if (selected) { setDraftName(selected.name); setDraftDesc(selected.description); setDraftCode(selected.code); setEditMode(false); setIsDirty(false) }
   }
 
-  const deleteScript = (s: AutomationScript) => {
-    dialog.confirm('Xóa script', `Xóa "${s.name}"?`, async () => {
-      await window.api.scripts.delete(s.id); toast.success('Đã xóa'); await loadScripts()
+  const deleteScript = async (s: AutomationScript) => {
+    const confirmed = await dialog.confirmDelete('Xóa script', `Xóa "${s.name}"?`)
+    if (confirmed) {
+      await window.api.scripts.delete(s.id)
+      toast.success('Đã xóa')
+      await loadScripts()
       if (selected?.id === s.id) { backToGrid() }
-    })
+    }
   }
 
   // ── Runner ─────────────────────────────────────────────────────────────────
@@ -1294,7 +1299,13 @@ export default function AutomationPage({ subPage }: { subPage: AutoSub }) {
                     <button onClick={async () => { await window.api.scheduler.toggle(task.id, !task.enabled); loadTasks() }}
                       className={`rounded-lg px-3 py-1.5 text-xs font-medium transition-colors ${task.enabled ? 'border border-white/[0.08] text-slate-500 hover:bg-white/[0.04]' : 'bg-[#7C3AED]/70 text-white hover:bg-[#7C3AED]'}`}
                     >{task.enabled ? 'Tắt' : 'Bật'}</button>
-                    <button onClick={() => dialog.confirm('Xóa lịch', `Xóa lịch chạy "${task.scriptName}"?`, async () => { await window.api.scheduler.delete(task.id); loadTasks() })}
+                    <button onClick={async () => {
+                      const confirmed = await dialog.confirmDelete('Xóa lịch', `Xóa lịch chạy "${task.scriptName}"?`)
+                      if (confirmed) {
+                        await window.api.scheduler.delete(task.id)
+                        loadTasks()
+                      }
+                    }}
                       className="rounded-lg border border-white/[0.06] p-1.5 text-slate-700 hover:border-red-500/20 hover:text-red-400 transition-colors"
                     >✕</button>
                   </div>
@@ -1317,7 +1328,14 @@ export default function AutomationPage({ subPage }: { subPage: AutoSub }) {
                 <p className="mt-0.5 text-xs text-slate-600">{history.length} bản ghi · tối đa 500</p>
               </div>
               {history.length > 0 && (
-                <button onClick={() => dialog.confirm('Xóa lịch sử', 'Xóa toàn bộ?', async () => { await window.api.history.clear(); toast.success('Đã xóa'); loadHistory() })}
+                <button onClick={async () => {
+                  const confirmed = await dialog.confirmDelete('Xóa lịch sử', 'Xóa toàn bộ?')
+                  if (confirmed) {
+                    await window.api.history.clear()
+                    toast.success('Đã xóa')
+                    loadHistory()
+                  }
+                }}
                   className="rounded-lg border border-white/[0.07] px-3 py-2 text-xs text-slate-500 hover:border-red-500/20 hover:text-red-400 transition-colors"
                 >Xóa tất cả</button>
               )}
@@ -1369,7 +1387,14 @@ export default function AutomationPage({ subPage }: { subPage: AutoSub }) {
                       <span className="font-mono text-xs text-slate-600">{fmtDur(rec.finishedAt - rec.startedAt)}</span>
                       <StatusBadge status={rec.status} />
                       <span className="text-[11px] text-slate-700">{fmtDT(rec.startedAt)}</span>
-                      <button onClick={(e) => { e.stopPropagation(); dialog.confirm('Xóa', 'Xóa bản ghi này?', async () => { await window.api.history.delete(rec.id); loadHistory() }) }}
+                      <button onClick={async (e) => {
+                        e.stopPropagation()
+                        const confirmed = await dialog.confirmDelete('Xóa', 'Xóa bản ghi này?')
+                        if (confirmed) {
+                          await window.api.history.delete(rec.id)
+                          loadHistory()
+                        }
+                      }}
                         className="text-[11px] text-slate-700 hover:text-red-400 transition-colors text-right">✕</button>
                     </div>
                     {expandedId === rec.id && (

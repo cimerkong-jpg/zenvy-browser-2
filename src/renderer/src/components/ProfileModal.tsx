@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react'
 import type { Profile, Fingerprint, Proxy } from '../../../shared/types'
 import { useStore } from '../store/useStore'
+import { toast } from '../store/useToast'
 import Collapsible from './Collapsible'
 import Select from './ui/Select'
 
@@ -47,7 +48,7 @@ export default function ProfileModal({ profile, onClose }: Props) {
 
   const [name, setName] = useState('')
   const [groupId, setGroupId] = useState<string>('')
-  
+
   // Auto-select current group when creating new profile
   useEffect(() => {
     if (!profile && selectedGroupId && selectedGroupId !== 'no-group') {
@@ -87,7 +88,7 @@ export default function ProfileModal({ profile, onClose }: Props) {
 
   const handleSaveAsTemplate = async () => {
     if (!templateName.trim()) {
-      alert('Vui lòng nhập tên template')
+      toast.error('Vui lòng nhập tên template')
       return
     }
 
@@ -109,10 +110,10 @@ export default function ProfileModal({ profile, onClose }: Props) {
       setTemplateDesc('')
       setTemplateIcon('⭐')
 
-      alert('✅ Template đã được lưu!')
+      toast.success('Template đã được lưu!')
     } catch (error) {
       console.error('Failed to save template:', error)
-      alert('Lỗi khi lưu template')
+      toast.error('Lỗi khi lưu template')
     }
   }
 
@@ -154,10 +155,11 @@ export default function ProfileModal({ profile, onClose }: Props) {
 
       await loadAll()
       onClose()
+      toast.success('Đã lưu hồ sơ')
     } catch (error) {
       console.error('Failed to save profile:', error)
-      alert('Lỗi khi lưu hồ sơ: ' + (error as Error).message)
-    } finally {
+      toast.error('Lỗi khi lưu hồ sơ: ' + (error as Error).message)
+    } finally{
       setSaving(false)
     }
   }
@@ -176,8 +178,8 @@ export default function ProfileModal({ profile, onClose }: Props) {
           <h2 className="text-base font-semibold text-[#E5E7EB]">
             {isEdit ? 'Chỉnh sửa hồ sơ' : 'Tạo hồ sơ mới'}
           </h2>
-          <button 
-            onClick={onClose} 
+          <button
+            onClick={onClose}
             className="flex h-8 w-8 items-center justify-center rounded-lg text-[#9CA3AF] hover:bg-[#1F2230] hover:text-[#E5E7EB] transition-colors"
           >
             <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -603,8 +605,8 @@ export default function ProfileModal({ profile, onClose }: Props) {
             Lưu làm Template
           </button>
           <div className="flex gap-3">
-            <button 
-              onClick={onClose} 
+            <button
+              onClick={onClose}
               className="rounded-lg border border-[#1F2230] bg-[#0B0B0F] px-4 py-2 text-sm font-medium text-[#9CA3AF] hover:bg-[#1F2230] hover:text-[#E5E7EB] transition-colors"
             >
               Hủy

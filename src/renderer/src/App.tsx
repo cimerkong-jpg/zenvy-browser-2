@@ -14,6 +14,7 @@ import WorkspaceSettingsPage from './pages/WorkspaceSettingsPage'
 import LoginPage from './pages/LoginPage'
 import RegisterPage from './pages/RegisterPage'
 import ToastContainer from './components/ToastContainer'
+import DialogContainer from './components/DialogContainer'
 import TemplateManager from './components/TemplateManager'
 
 export type Page = 'profiles' | 'automation' | 'sync' | 'extensions' | 'members' | 'settings' | 'workspace-settings' | 'login' | 'register'
@@ -50,7 +51,7 @@ export default function App() {
   useEffect(() => {
     if (!authLoading && isAuthenticated) {
       const unsubscribe = setupStatusListener()
-      return () => { 
+      return () => {
         unsubscribe()
       }
     }
@@ -61,7 +62,7 @@ export default function App() {
     if (!authLoading && isAuthenticated && !workspaceInitializedRef.current) {
       workspaceInitializedRef.current = true
       setWorkspaceReady(false) // Not ready yet
-      
+
       // First ensure default workspace exists and load all workspaces
       ensureDefaultWorkspace()
         .then(() => {
@@ -180,6 +181,7 @@ export default function App() {
         </main>
       </div>
       <ToastContainer />
+      <DialogContainer />
       {showTemplateManager && (
         <TemplateManager onClose={() => setShowTemplateManager(false)} />
       )}

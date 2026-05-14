@@ -1,5 +1,6 @@
 import { useState } from 'react'
 import type { Profile, Group } from '../../../shared/types'
+import { toast } from '../store/useToast'
 import Select from './ui/Select'
 
 interface QuickEditProfileModalProps {
@@ -18,39 +19,39 @@ export default function QuickEditProfileModal({
   onSave
 }: QuickEditProfileModalProps) {
   const [value, setValue] = useState(
-    field === 'name' ? profile.name : 
-    field === 'notes' ? profile.notes : 
+    field === 'name' ? profile.name :
+    field === 'notes' ? profile.notes :
     profile.groupId || ''
   )
   const [saving, setSaving] = useState(false)
 
-  const title = 
-    field === 'name' ? 'Cập nhật tên' : 
-    field === 'notes' ? 'Cập nhật ghi chú' : 
+  const title =
+    field === 'name' ? 'Cập nhật tên' :
+    field === 'notes' ? 'Cập nhật ghi chú' :
     'Chuyển nhóm'
-  
-  const label = 
-    field === 'name' ? 'Tên hồ sơ' : 
-    field === 'notes' ? 'Ghi chú' : 
+
+  const label =
+    field === 'name' ? 'Tên hồ sơ' :
+    field === 'notes' ? 'Ghi chú' :
     'Nhóm'
-  
+
   const isValid = field === 'name' ? value.trim().length > 0 : true
 
   const handleSave = async () => {
     if (!isValid) return
-    
+
     setSaving(true)
     try {
-      const updates = 
+      const updates =
         field === 'name' ? { name: value.trim() } :
         field === 'notes' ? { notes: value } :
         { groupId: value || null }
-      
+
       await onSave(profile.id, updates)
       onClose()
     } catch (error) {
       console.error('Failed to update profile:', error)
-      alert('Lỗi khi cập nhật: ' + (error as Error).message)
+      toast.error('Lỗi khi cập nhật: ' + (error as Error).message)
     } finally {
       setSaving(false)
     }
@@ -70,7 +71,7 @@ export default function QuickEditProfileModal({
         {/* Header */}
         <div className="flex items-center justify-between border-b border-[#1F2230] px-6 py-3.5">
           <h3 className="text-base font-semibold text-[#E5E7EB]">{title}</h3>
-          <button 
+          <button
             onClick={onClose}
             className="flex h-8 w-8 items-center justify-center rounded-lg text-[#9CA3AF] hover:bg-[#1F2230] hover:text-[#E5E7EB] transition-colors"
           >
@@ -85,7 +86,7 @@ export default function QuickEditProfileModal({
           <label className="block text-xs font-medium text-[#9CA3AF] mb-1.5">
             {label} {field === 'name' && <span className="text-red-400">*</span>}
           </label>
-          
+
           {field === 'name' ? (
             <input
               type="text"
@@ -122,7 +123,7 @@ export default function QuickEditProfileModal({
 
         {/* Footer */}
         <div className="flex items-center justify-end gap-3 border-t border-[#1F2230] px-6 py-4">
-          <button 
+          <button
             onClick={onClose}
             disabled={saving}
             className="rounded-lg border border-[#1F2230] bg-[#0B0B0F] px-4 py-2 text-sm font-medium text-[#9CA3AF] hover:bg-[#1F2230] hover:text-[#E5E7EB] disabled:opacity-50 transition-colors"

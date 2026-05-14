@@ -11,11 +11,13 @@ import type {
   Workspace,
   WorkspaceInvitation,
   WorkspaceMember,
+  WorkspaceMemberAuthorizations,
   WorkspaceRole,
   WorkspaceUserGroup,
   WorkspaceWithStats,
 } from '../shared/workspace-types'
 import { DefaultRolePermissionMap, PermissionKeys } from '../shared/workspace-types'
+import type { Group, Profile } from '../shared/types'
 
 let currentWorkspaceId: string | null = null
 const groupDescriptionMetaPrefix = '__ZENVY_GROUP_META__:'
@@ -37,6 +39,34 @@ function token(): string {
 
 function emptyPermissionMap(): RolePermissionMap {
   return Object.fromEntries(PermissionKeys.map((key) => [key, false])) as RolePermissionMap
+}
+
+function uniqueStrings(values: string[] | null | undefined): string[] {
+  return [...new Set((values ?? []).map((value) => String(value).trim()).filter(Boolean))]
+}
+
+type AuthorizationMode = 'group' | 'profile'
+type CurrentWorkspaceMember = {
+  id: string
+  workspace_id: string
+  user_id: string
+  role: WorkspaceRole
+  status: string
+  user_group_id: string | null
+}
+
+function authorizationModeFromSettings(settings: any): AuthorizationMode {
+  return settings?.permissionMode === 'group' ? 'group' : 'profile'
+}
+
+async function getWorkspaceAuthorizationMode(workspaceId: string): Promise<AuthorizationMode> {
+  const { data, error } = await getSupabase()
+    .from('workspaces')
+    .select('settings')
+    .eq('id', workspaceId)
+    .single()
+  if (error) throw toError(error, 'Failed to read workspace authorization mode')
+  return authorizationModeFromSettings((data as any)?.settings)
 }
 
 function parseGroupPermissions(description: string | null | undefined): RolePermissionMap | null {
@@ -77,6 +107,15 @@ function describeError(error: unknown): string {
 function toError(error: unknown, fallback = 'Workspace operation failed'): Error {
   const message = describeError(error)
   return new Error(message && message !== 'undefined' ? message : fallback)
+}
+
+function isNoRowsError(error: unknown): boolean {
+  return Boolean(
+    error &&
+    typeof error === 'object' &&
+    'code' in error &&
+    (error as { code?: unknown }).code === 'PGRST116'
+  )
 }
 
 function requireConfigured(): void {
@@ -459,7 +498,7 @@ async function getMyWorkspacesDirect(user: Awaited<ReturnType<typeof requireUser
 export async function getMyWorkspaces(): Promise<WorkspaceWithStats[]> {
   requireConfigured()
   const user = await requireUser()
-  
+
   // Ensure default workspace exists first
   let defaultWorkspace: WorkspaceWithStats | null = null
   try {
@@ -468,7 +507,7 @@ export async function getMyWorkspaces(): Promise<WorkspaceWithStats[]> {
     console.error('[Workspace:getWorkspaces] ensureDefaultWorkspace failed:', describeError(error))
     throw toError(error, 'Failed to ensure default workspace')
   }
-  
+
   try {
     await acceptPendingInvitations()
   } catch (error) {
@@ -488,14 +527,14 @@ export async function getMyWorkspaces(): Promise<WorkspaceWithStats[]> {
       isDefault: workspace.isDefault === true || workspace.id === defaultWorkspace?.id,
     }
   })
-  
+
   // Sort: default workspace first, then by created_at
   workspaces.sort((a, b) => {
     if (a.isDefault && !b.isDefault) return -1
     if (!a.isDefault && b.isDefault) return 1
     return a.createdAt - b.createdAt
   })
-  
+
   if (!currentWorkspaceId || !workspaces.some((workspace) => workspace.id === currentWorkspaceId)) {
     currentWorkspaceId = workspaces[0]?.id ?? null
   }
@@ -545,26 +584,26 @@ export async function createWorkspace(input: string | CreateWorkspaceInput): Pro
 export async function updateWorkspace(workspaceId: string, updates: { name?: string; description?: string; settings?: any }): Promise<void> {
   requireConfigured()
   const user = await requireUser()
-  
+
   // Load workspace to check ownership
   const { data: workspace, error: fetchError } = await getSupabase()
     .from('workspaces')
     .select('owner_id, is_default, name, settings')
     .eq('id', workspaceId)
     .single()
-  
+
   if (fetchError) throw toError(fetchError, 'Failed to load workspace')
   if (!workspace) throw new Error('Workspace not found')
   if (workspace.owner_id !== user.id) throw new Error('Permission denied: only owner can update workspace')
-  
+
   const payload: any = { updated_at: new Date().toISOString() }
-  
+
   if (updates.name !== undefined) {
     const trimmedName = updates.name.trim()
     if (!trimmedName) throw new Error('Workspace name cannot be empty')
     payload.name = trimmedName
   }
-  
+
   // Support both description (legacy) and settings (new)
   if (updates.description !== undefined) {
     const currentSettings = (workspace.settings as any) ?? {}
@@ -573,71 +612,104 @@ export async function updateWorkspace(workspaceId: string, updates: { name?: str
     const currentSettings = (workspace.settings as any) ?? {}
     payload.settings = { ...currentSettings, ...updates.settings }
   }
-  
+
   const { error } = await getSupabase()
     .from('workspaces')
     .update(payload)
     .eq('id', workspaceId)
-  
+
   if (error) throw toError(error, 'Failed to update workspace')
 }
 
 export async function updateWorkspaceSettings(workspaceId: string, settings: { permissionMode?: 'group' | 'profile'; automationMode?: 'flowchart' | 'javascript' }): Promise<void> {
   requireConfigured()
   const user = await requireUser()
-  
+
   // Load workspace to check ownership
   const { data: workspace, error: fetchError } = await getSupabase()
     .from('workspaces')
     .select('owner_id, settings')
     .eq('id', workspaceId)
     .single()
-  
+
   if (fetchError) throw toError(fetchError, 'Failed to load workspace')
   if (!workspace) throw new Error('Workspace not found')
   if (workspace.owner_id !== user.id) throw new Error('Permission denied: only owner can update workspace settings')
-  
+
   const currentSettings = workspace.settings ?? {}
   const newSettings = { ...currentSettings, ...settings }
-  
+
   const { error } = await getSupabase()
     .from('workspaces')
     .update({ settings: newSettings, updated_at: new Date().toISOString() })
     .eq('id', workspaceId)
-  
+
   if (error) throw toError(error, 'Failed to update workspace settings')
 }
 
 export async function inviteMember(input: InviteMemberInput): Promise<WorkspaceInvitation> {
   requireConfigured()
   const user = await requireUser()
-  
+  const currentMember = await requireCurrentWorkspaceMember(input.workspaceId)
+
   const hasInvitePermission = await hasPermission('member.invite', input.workspaceId)
-  
+
   if (!hasInvitePermission) {
     throw new Error('Permission denied: member.invite')
   }
-  
+
+  // ✅ Reject owner role invitations
+  if (input.role === 'owner') {
+    throw new Error('Cannot invite members as owner. Only admin, member, or viewer roles are allowed.')
+  }
+
+  // ✅ Require userGroupId for all invitations
+  if (!input.userGroupId) {
+    throw new Error('Vui lòng chọn nhóm người dùng cho thành viên')
+  }
+  if (!isWorkspaceOwner(currentMember)) {
+    if (!currentMember.user_group_id) {
+      throw new Error('Permission denied: user group scope is required')
+    }
+    if (input.userGroupId !== currentMember.user_group_id) {
+      throw new Error('Permission denied: outside your user group')
+    }
+  }
+  const authorizationMode = await getWorkspaceAuthorizationMode(input.workspaceId)
+
+  // ✅ Validate userGroupId belongs to same workspace
+  const { data: group, error: groupError } = await getSupabase()
+    .from('workspace_user_groups')
+    .select('id,workspace_id')
+    .eq('id', input.userGroupId)
+    .eq('workspace_id', input.workspaceId)
+    .maybeSingle()
+
+  if (groupError) throw toError(groupError, 'Failed to validate user group')
+  if (!group) throw new Error('Nhóm người dùng không tồn tại hoặc không thuộc workspace này')
+
   const expiresAt = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString()
   const insertPayload = {
     workspace_id: input.workspaceId,
     email: input.email.trim().toLowerCase(),
     role: input.role,
-    user_group_id: input.userGroupId ?? null,
+    user_group_id: input.userGroupId,
     profile_limit: input.profileLimit ?? null,
     note: input.note ?? '',
+    authorization_group_ids: authorizationMode === 'group' ? uniqueStrings(input.groupIds) : [],
+    authorization_profile_ids: authorizationMode === 'profile' ? uniqueStrings(input.profileIds) : [],
     invited_by: user.id,
     status: 'pending',
     token: token(),
     expires_at: expiresAt,
   }
-  
+
   const { data, error } = await getSupabase()
     .from('workspace_invitations')
     .insert(insertPayload)
     .select('*')
     .single()
-  
+
   if (error) {
     const errorMessage = [
       error.message,
@@ -647,72 +719,234 @@ export async function inviteMember(input: InviteMemberInput): Promise<WorkspaceI
     ].filter(Boolean).join(' | ')
     throw new Error(errorMessage || 'Failed to create invitation')
   }
-  
+
   return mapInvitation(data)
 }
 
 export async function getWorkspaceMembers(workspaceId: string): Promise<WorkspaceMember[]> {
   requireConfigured()
+  const currentMember = await requireCurrentWorkspaceMember(workspaceId)
+
+  // ✅ Query ALL active members in workspace (RLS should allow this for owners/admins)
   const { data, error } = await getSupabase()
     .from('workspace_members')
     .select('*')
     .eq('workspace_id', workspaceId)
     .eq('status', 'active')
-    .order('joined_at', { ascending: true })
 
-  if (error) throw error
-  const rows = (data ?? []) as any[]
-  const userIds = rows.map((row) => row.user_id).filter(Boolean)
-  const { data: profiles } = userIds.length
-    ? await getSupabase().from('user_profiles').select('id,email,display_name').in('id', userIds)
-    : { data: [] as any[] }
+  if (error) {
+    console.error('[getWorkspaceMembers] Query error details:', JSON.stringify(error, null, 2))
+    throw toError(error, 'Failed to read workspace members')
+  }
+
+  const rows = ((data ?? []) as any[]).filter((row) => {
+    if (isWorkspaceOwner(currentMember)) return true
+    return Boolean(currentMember.user_group_id) && row.user_group_id === currentMember.user_group_id
+  })
+
+  // Get user profiles for display names
+  const userIds = [...new Set(rows.map((row) => row.user_id).filter(Boolean))]
+  let profiles: any[] = []
+  if (userIds.length > 0) {
+    const { data: profileData } = await getSupabase()
+      .from('user_profiles')
+      .select('id,display_name')
+      .in('id', userIds)
+    profiles = profileData ?? []
+  }
+
   const profileById = new Map((profiles ?? []).map((profile: any) => [profile.id, profile]))
+
   const members = rows.map((row) => mapMember({
     ...row,
-    profile_email: profileById.get(row.user_id)?.email,
-    display_name: profileById.get(row.user_id)?.display_name,
+    display_name: profileById.get(row.user_id)?.display_name ?? null,
   }))
-
-  const existingEmails = new Set(members.map((member) => member.email.toLowerCase()).filter(Boolean))
-  try {
-    const accepted = await getSupabase()
-      .from('workspace_invitations')
-      .select('id,workspace_id,email,role,user_group_id,profile_limit,note,invited_by,accepted_at,updated_at')
-      .eq('workspace_id', workspaceId)
-      .eq('status', 'accepted')
-
-    if (!accepted.error) {
-      for (const invitation of (accepted.data ?? []) as any[]) {
-        const email = String(invitation.email ?? '').trim().toLowerCase()
-        if (!email || existingEmails.has(email)) continue
-        existingEmails.add(email)
-        members.push({
-          id: `invitation:${invitation.id}`,
-          workspaceId: invitation.workspace_id,
-          userId: '',
-          email,
-          displayName: email.split('@')[0] || null,
-          isInvitationFallback: true,
-          role: invitation.role,
-          status: 'active',
-          userGroupId: invitation.user_group_id ?? null,
-          profileLimit: invitation.profile_limit ?? null,
-          note: invitation.note ?? '',
-          invitedBy: invitation.invited_by ?? null,
-          joinedAt: invitation.accepted_at ? toMs(invitation.accepted_at) : Date.now(),
-          updatedAt: invitation.updated_at ? toMs(invitation.updated_at) : Date.now(),
-        })
-      }
-    }
-  } catch (error) {
-    console.warn('[Workspace:getWorkspaceMembers] Accepted invitation fallback failed:', describeError(error))
-  }
 
   return members.sort((a, b) => a.joinedAt - b.joinedAt)
 }
 
+async function readWorkspaceMember(memberId: string) {
+  const { data, error } = await getSupabase()
+    .from('workspace_members')
+    .select('id,workspace_id,user_id,email,role,status,user_group_id')
+    .eq('id', memberId)
+    .single()
+  if (error) throw toError(error, 'Failed to read workspace member')
+  return data as any
+}
+
+export async function getMemberAuthorizations(memberId: string): Promise<WorkspaceMemberAuthorizations> {
+  requireConfigured()
+  const member = await readWorkspaceMember(memberId)
+  await assertSameUserGroupOrOwner(member.workspace_id, member.user_group_id)
+  if (!(await hasPermission('member.edit_role', member.workspace_id)) && member.user_id !== (await requireUser()).id) {
+    throw new Error('Permission denied: member.edit_role')
+  }
+
+  const [groups, profiles] = await Promise.all([
+    getSupabase()
+      .from('workspace_member_profile_groups')
+      .select('group_id')
+      .eq('member_id', memberId),
+    getSupabase()
+      .from('workspace_member_profiles')
+      .select('profile_id')
+      .eq('member_id', memberId),
+  ])
+
+  if (groups.error) throw toError(groups.error, 'Failed to read member profile-group authorizations')
+  if (profiles.error) throw toError(profiles.error, 'Failed to read member profile authorizations')
+
+  return {
+    groupIds: ((groups.data ?? []) as any[]).map((row) => String(row.group_id)),
+    profileIds: ((profiles.data ?? []) as any[]).map((row) => String(row.profile_id)),
+  }
+}
+
+export async function updateMemberAuthorizations(memberId: string, authorizations: WorkspaceMemberAuthorizations): Promise<WorkspaceMemberAuthorizations> {
+  requireConfigured()
+  const member = await readWorkspaceMember(memberId)
+  if (member.role === 'owner') return { groupIds: [], profileIds: [] }
+  await assertSameUserGroupOrOwner(member.workspace_id, member.user_group_id)
+  if (!(await hasPermission('member.edit_role', member.workspace_id))) {
+    throw new Error('Permission denied: member.edit_role')
+  }
+
+  const authorizationMode = await getWorkspaceAuthorizationMode(member.workspace_id)
+  const groupIds = authorizationMode === 'group' ? uniqueStrings(authorizations.groupIds) : []
+  const profileIds = authorizationMode === 'profile' ? uniqueStrings(authorizations.profileIds) : []
+
+  const deleteGroups = await getSupabase()
+    .from('workspace_member_profile_groups')
+    .delete()
+    .eq('member_id', memberId)
+  if (deleteGroups.error) throw toError(deleteGroups.error, 'Failed to clear member profile-group authorizations')
+
+  const deleteProfiles = await getSupabase()
+    .from('workspace_member_profiles')
+    .delete()
+    .eq('member_id', memberId)
+  if (deleteProfiles.error) throw toError(deleteProfiles.error, 'Failed to clear member profile authorizations')
+
+  if (groupIds.length > 0) {
+    const { error } = await getSupabase()
+      .from('workspace_member_profile_groups')
+      .insert(groupIds.map((groupId) => ({ workspace_id: member.workspace_id, member_id: memberId, group_id: groupId })))
+    if (error) throw toError(error, 'Failed to save member profile-group authorizations')
+  }
+
+  if (profileIds.length > 0) {
+    const { error } = await getSupabase()
+      .from('workspace_member_profiles')
+      .insert(profileIds.map((profileId) => ({ workspace_id: member.workspace_id, member_id: memberId, profile_id: profileId })))
+    if (error) throw toError(error, 'Failed to save member profile authorizations')
+  }
+
+  return { groupIds, profileIds }
+}
+
+export async function getCurrentWorkspaceMember(workspaceId: string): Promise<CurrentWorkspaceMember | null> {
+  const user = await requireUser()
+  const { data, error } = await getSupabase()
+    .from('workspace_members')
+    .select('id,workspace_id,user_id,role,status,user_group_id')
+    .eq('workspace_id', workspaceId)
+    .eq('user_id', user.id)
+    .eq('status', 'active')
+    .maybeSingle()
+  if (error) throw toError(error, 'Failed to read current workspace member')
+  return data as CurrentWorkspaceMember | null
+}
+
+async function requireCurrentWorkspaceMember(workspaceId: string): Promise<CurrentWorkspaceMember> {
+  const member = await getCurrentWorkspaceMember(workspaceId)
+  if (!member) throw new Error('Permission denied: not an active workspace member')
+  return member
+}
+
+function isWorkspaceOwner(member: CurrentWorkspaceMember | null): boolean {
+  return member?.role === 'owner'
+}
+
+export async function assertSameUserGroupOrOwner(workspaceId: string, targetUserGroupId: string | null | undefined): Promise<void> {
+  const currentMember = await requireCurrentWorkspaceMember(workspaceId)
+  if (isWorkspaceOwner(currentMember)) return
+  if (!currentMember.user_group_id) {
+    throw new Error('Permission denied: user group scope is required')
+  }
+  if (!targetUserGroupId || targetUserGroupId !== currentMember.user_group_id) {
+    throw new Error('Permission denied: outside your user group')
+  }
+}
+
+async function getAuthorizedIdsForCurrentUser(workspaceId: string): Promise<WorkspaceMemberAuthorizations | null> {
+  const member = await getCurrentWorkspaceMember(workspaceId)
+  if (!member) return { groupIds: [], profileIds: [] }
+  if (member.role === 'owner') return null
+  const authorizationMode = await getWorkspaceAuthorizationMode(workspaceId)
+  const authorizations = await getMemberAuthorizations(member.id)
+  return authorizationMode === 'group'
+    ? { groupIds: authorizations.groupIds, profileIds: [] }
+    : { groupIds: [], profileIds: authorizations.profileIds }
+}
+
+export async function filterAuthorizedProfiles(profiles: Profile[], groups: Group[] = []): Promise<Profile[]> {
+  const workspaceId = currentWorkspaceId
+  if (!workspaceId) return []
+  const authorizations = await getAuthorizedIdsForCurrentUser(workspaceId)
+  if (authorizations === null) return profiles
+
+  const authorizationMode = await getWorkspaceAuthorizationMode(workspaceId)
+  const allowedProfileIds = new Set(authorizations.profileIds)
+  const allowedGroupIds = new Set(authorizations.groupIds)
+  return profiles.filter((profile) => {
+    if (authorizationMode === 'group') return Boolean(profile.groupId && allowedGroupIds.has(profile.groupId))
+    return allowedProfileIds.has(profile.id)
+  })
+}
+
+export async function filterAuthorizedGroups(groups: Group[], profiles: Profile[]): Promise<Group[]> {
+  const workspaceId = currentWorkspaceId
+  if (!workspaceId) return []
+  const authorizations = await getAuthorizedIdsForCurrentUser(workspaceId)
+  if (authorizations === null) return groups
+
+  const authorizationMode = await getWorkspaceAuthorizationMode(workspaceId)
+  const allowedGroupIds = new Set(authorizations.groupIds)
+  const allowedProfileIds = new Set(authorizations.profileIds)
+  if (authorizationMode === 'group') {
+    return groups.filter((group) => allowedGroupIds.has(group.id))
+  }
+
+  const groupIdsWithAllowedProfiles = new Set(
+    profiles
+      .filter((profile) => allowedProfileIds.has(profile.id) && profile.groupId)
+      .map((profile) => profile.groupId as string)
+  )
+  return groups.filter((group) => allowedGroupIds.has(group.id) || groupIdsWithAllowedProfiles.has(group.id))
+}
+
+export async function assertProfileAuthorized(profile: Profile): Promise<void> {
+  const workspaceId = currentWorkspaceId
+  if (!workspaceId) throw new Error('No active workspace')
+  const allowed = await filterAuthorizedProfiles([profile])
+  if (!allowed.some((item) => item.id === profile.id)) {
+    throw new Error('Permission denied: profile authorization')
+  }
+}
+
+export async function assertGroupAuthorized(group: Group, profiles: Profile[]): Promise<void> {
+  const workspaceId = currentWorkspaceId
+  if (!workspaceId) throw new Error('No active workspace')
+  const allowed = await filterAuthorizedGroups([group], profiles)
+  if (!allowed.some((item) => item.id === group.id)) {
+    throw new Error('Permission denied: profile group authorization')
+  }
+}
+
 export async function getWorkspaceInvitations(workspaceId: string): Promise<WorkspaceInvitation[]> {
   requireConfigured()
+  const currentMember = await requireCurrentWorkspaceMember(workspaceId)
   const { data, error } = await getSupabase()
     .from('workspace_invitations')
     .select('*')
@@ -721,7 +955,10 @@ export async function getWorkspaceInvitations(workspaceId: string): Promise<Work
     .order('created_at', { ascending: false })
 
   if (error) throw error
-  const rows = (data ?? []) as any[]
+  const rows = ((data ?? []) as any[]).filter((row) => {
+    if (isWorkspaceOwner(currentMember)) return true
+    return Boolean(currentMember.user_group_id) && row.user_group_id === currentMember.user_group_id
+  })
   const userIds = [...new Set(rows.map((row) => row.invited_by).filter(Boolean))]
   const { data: profiles } = userIds.length
     ? await getSupabase().from('user_profiles').select('id,email').in('id', userIds)
@@ -732,6 +969,7 @@ export async function getWorkspaceInvitations(workspaceId: string): Promise<Work
 
 export async function getWorkspaceUserGroups(workspaceId: string): Promise<WorkspaceUserGroup[]> {
   requireConfigured()
+  const currentMember = await requireCurrentWorkspaceMember(workspaceId)
   const { data, error } = await getSupabase()
     .from('workspace_user_groups')
     .select('*')
@@ -739,7 +977,11 @@ export async function getWorkspaceUserGroups(workspaceId: string): Promise<Works
     .order('name')
 
   if (error) throw error
-  return ((data ?? []) as any[]).map(mapGroup)
+  const rows = ((data ?? []) as any[]).filter((row) => {
+    if (isWorkspaceOwner(currentMember)) return true
+    return Boolean(currentMember.user_group_id) && row.id === currentMember.user_group_id
+  })
+  return rows.map(mapGroup)
 }
 
 export async function createWorkspaceUserGroup(inputOrWorkspaceId: string | CreateWorkspaceUserGroupInput, maybeName?: string): Promise<WorkspaceUserGroup> {
@@ -748,8 +990,9 @@ export async function createWorkspaceUserGroup(inputOrWorkspaceId: string | Crea
   const input = typeof inputOrWorkspaceId === 'string'
     ? { workspaceId: inputOrWorkspaceId, name: maybeName ?? '', description: '' }
     : inputOrWorkspaceId
-  if (!(await hasPermission('member.edit_role', input.workspaceId))) {
-    throw new Error('Permission denied: member.edit_role')
+  const currentMember = await requireCurrentWorkspaceMember(input.workspaceId)
+  if (!isWorkspaceOwner(currentMember)) {
+    throw new Error('Permission denied: only workspace owner can manage user groups')
   }
   const { data, error } = await getSupabase()
     .from('workspace_user_groups')
@@ -769,8 +1012,9 @@ export async function updateWorkspaceUserGroup(id: string, name: string, descrip
     .eq('id', id)
     .single()
   if (readError) throw readError
-  if (!(await hasPermission('member.edit_role', existing.workspace_id))) {
-    throw new Error('Permission denied: member.edit_role')
+  const currentMember = await requireCurrentWorkspaceMember(existing.workspace_id)
+  if (!isWorkspaceOwner(currentMember)) {
+    throw new Error('Permission denied: only workspace owner can manage user groups')
   }
   const patch: Record<string, string> = { name }
   if (description !== undefined) patch.description = description
@@ -785,114 +1029,271 @@ export async function updateWorkspaceUserGroup(id: string, name: string, descrip
   return mapGroup(data)
 }
 
-export async function deleteWorkspaceUserGroup(id: string): Promise<void> {
+export async function deleteWorkspaceUserGroup(id: string): Promise<{ removedMembersCount: number; revokedInvitationsCount: number }> {
   requireConfigured()
-  const { data: existing, error: readError } = await getSupabase()
+
+  // Read group with workspace_id
+  const { data: group, error: readError } = await getSupabase()
     .from('workspace_user_groups')
     .select('workspace_id')
     .eq('id', id)
     .single()
-  if (readError) throw readError
-  if (!(await hasPermission('member.edit_role', existing.workspace_id))) {
-    throw new Error('Permission denied: member.edit_role')
+
+  if (readError) throw toError(readError, 'Failed to read user group')
+
+  // Check permission
+  const currentMember = await requireCurrentWorkspaceMember(group.workspace_id)
+  if (!isWorkspaceOwner(currentMember)) {
+    throw new Error('Permission denied: only workspace owner can manage user groups')
   }
-  const { error } = await getSupabase().from('workspace_user_groups').delete().eq('id', id)
-  if (error) throw error
+
+  // ✅ Step 1: Remove all active members in this group (except owner)
+  const { data: removedMembers, error: removeMembersError } = await getSupabase()
+    .from('workspace_members')
+    .update({ status: 'removed' })
+    .eq('workspace_id', group.workspace_id)
+    .eq('user_group_id', id)
+    .neq('role', 'owner')
+    .eq('status', 'active')
+    .select('id')
+
+  if (removeMembersError) throw toError(removeMembersError, 'Failed to remove members from group')
+
+  const removedMembersCount = (removedMembers ?? []).length
+
+  // ✅ Step 2: Revoke all pending invitations in this group
+  const { data: revokedInvitations, error: revokeInvitationsError } = await getSupabase()
+    .from('workspace_invitations')
+    .update({ status: 'revoked', revoked_at: new Date().toISOString() })
+    .eq('workspace_id', group.workspace_id)
+    .eq('user_group_id', id)
+    .eq('status', 'pending')
+    .select('id')
+
+  if (revokeInvitationsError) throw toError(revokeInvitationsError, 'Failed to revoke invitations from group')
+
+  const revokedInvitationsCount = (revokedInvitations ?? []).length
+
+  // ✅ Step 3: Delete the group
+  const { error: deleteError } = await getSupabase()
+    .from('workspace_user_groups')
+    .delete()
+    .eq('id', id)
+
+  if (deleteError) throw toError(deleteError, 'Failed to delete user group')
+
+  return { removedMembersCount, revokedInvitationsCount }
 }
 
 export async function revokeInvitation(invitationId: string): Promise<void> {
   requireConfigured()
+  const workspaceId = currentWorkspaceId
+  if (!workspaceId) throw new Error('No active workspace')
+  const currentMember = await requireCurrentWorkspaceMember(workspaceId)
   const { data: invitation, error: readError } = await getSupabase()
     .from('workspace_invitations')
-    .select('workspace_id')
+    .select('id,workspace_id,user_group_id,status,email')
     .eq('id', invitationId)
+    .eq('workspace_id', workspaceId)
     .single()
-  if (readError) throw readError
-  if (!(await hasPermission('member.invite', invitation.workspace_id)) && !(await hasPermission('member.remove', invitation.workspace_id))) {
-    throw new Error('Permission denied: member.invite')
+  if (readError) {
+    console.error('[Workspace:revokeInvitation] Read failed:', {
+      action: 'revoke',
+      invitationId,
+      workspaceId,
+      currentMemberId: currentMember.id,
+      currentMemberIsOwner: isWorkspaceOwner(currentMember),
+      currentMemberUserGroupId: currentMember.user_group_id,
+      error: describeError(readError),
+    })
+    throw new Error('Không tìm thấy lời mời hoặc bạn không có quyền xóa')
   }
-  const { error } = await getSupabase()
+  console.log('[Workspace:revokeInvitation] Target invitation:', {
+    action: 'revoke',
+    invitationId,
+    workspaceId,
+    currentMemberId: currentMember.id,
+    currentMemberIsOwner: isWorkspaceOwner(currentMember),
+    currentMemberUserGroupId: currentMember.user_group_id,
+    targetInvitationUserGroupId: invitation.user_group_id,
+  })
+  try {
+    await assertSameUserGroupOrOwner(invitation.workspace_id, invitation.user_group_id)
+  } catch (error) {
+    console.error('[Workspace:revokeInvitation] Scope denied:', {
+      action: 'revoke',
+      invitationId,
+      workspaceId,
+      currentMemberId: currentMember.id,
+      currentMemberIsOwner: isWorkspaceOwner(currentMember),
+      currentMemberUserGroupId: currentMember.user_group_id,
+      targetInvitationUserGroupId: invitation.user_group_id,
+      error: describeError(error),
+    })
+    throw new Error('Không tìm thấy lời mời hoặc bạn không có quyền xóa')
+  }
+  if (!(await hasPermission('member.invite', invitation.workspace_id)) && !(await hasPermission('member.remove', invitation.workspace_id))) {
+    throw new Error('Không tìm thấy lời mời hoặc bạn không có quyền xóa')
+  }
+  const { data: deletedInvitation, error } = await getSupabase()
     .from('workspace_invitations')
-    .update({ status: 'revoked', revoked_at: new Date().toISOString() })
+    .delete()
     .eq('id', invitationId)
+    .eq('workspace_id', workspaceId)
     .in('status', ['pending', 'expired'])
+    .select('id,workspace_id,user_group_id,status,email')
+    .single()
 
-  if (error) throw error
+  if (error) {
+    console.error('[Workspace:revokeInvitation] Delete failed:', {
+      action: 'revoke',
+      invitationId,
+      workspaceId,
+      currentMemberId: currentMember.id,
+      currentMemberIsOwner: isWorkspaceOwner(currentMember),
+      currentMemberUserGroupId: currentMember.user_group_id,
+      targetInvitationUserGroupId: invitation.user_group_id,
+      error: describeError(error),
+    })
+    throw new Error('Không tìm thấy lời mời hoặc bạn không có quyền xóa')
+  }
+  if (!deletedInvitation) throw new Error('Không tìm thấy lời mời hoặc bạn không có quyền xóa')
+  console.log('[Workspace:revokeInvitation] Deleted invitation row:', {
+    action: 'revoke',
+    invitationId,
+    workspaceId,
+    currentMemberId: currentMember.id,
+    currentMemberIsOwner: isWorkspaceOwner(currentMember),
+    currentMemberUserGroupId: currentMember.user_group_id,
+    targetInvitationUserGroupId: deletedInvitation.user_group_id,
+    deletedInvitation: deletedInvitation,
+  })
 }
 
 export async function resendInvitation(invitationId: string): Promise<void> {
   requireConfigured()
+  const workspaceId = currentWorkspaceId
+  if (!workspaceId) throw new Error('No active workspace')
+  const currentMember = await requireCurrentWorkspaceMember(workspaceId)
   const { data: invitation, error: readError } = await getSupabase()
     .from('workspace_invitations')
-    .select('workspace_id')
+    .select('id,workspace_id,user_group_id,status,email')
     .eq('id', invitationId)
+    .eq('workspace_id', workspaceId)
     .single()
-  if (readError) throw readError
-  if (!(await hasPermission('member.invite', invitation.workspace_id))) {
-    throw new Error('Permission denied: member.invite')
+  if (readError) {
+    console.error('[Workspace:resendInvitation] Read failed:', {
+      action: 'resend',
+      invitationId,
+      workspaceId,
+      currentMemberId: currentMember.id,
+      currentMemberIsOwner: isWorkspaceOwner(currentMember),
+      currentMemberUserGroupId: currentMember.user_group_id,
+      error: describeError(readError),
+    })
+    throw new Error('Không tìm thấy lời mời hoặc bạn không có quyền gửi lại')
   }
-  const { error } = await getSupabase()
+  console.log('[Workspace:resendInvitation] Target invitation:', {
+    action: 'resend',
+    invitationId,
+    workspaceId,
+    currentMemberId: currentMember.id,
+    currentMemberIsOwner: isWorkspaceOwner(currentMember),
+    currentMemberUserGroupId: currentMember.user_group_id,
+    targetInvitationUserGroupId: invitation.user_group_id,
+  })
+  try {
+    await assertSameUserGroupOrOwner(invitation.workspace_id, invitation.user_group_id)
+  } catch (error) {
+    console.error('[Workspace:resendInvitation] Scope denied:', {
+      action: 'resend',
+      invitationId,
+      workspaceId,
+      currentMemberId: currentMember.id,
+      currentMemberIsOwner: isWorkspaceOwner(currentMember),
+      currentMemberUserGroupId: currentMember.user_group_id,
+      targetInvitationUserGroupId: invitation.user_group_id,
+      error: describeError(error),
+    })
+    throw new Error('Không tìm thấy lời mời hoặc bạn không có quyền gửi lại')
+  }
+  if (!(await hasPermission('member.invite', invitation.workspace_id))) {
+    throw new Error('Không tìm thấy lời mời hoặc bạn không có quyền gửi lại')
+  }
+  const { data: updatedInvitation, error } = await getSupabase()
     .from('workspace_invitations')
     .update({
       status: 'pending',
       token: token(),
       expires_at: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString(),
       revoked_at: null,
+      updated_at: new Date().toISOString(),
     })
     .eq('id', invitationId)
+    .eq('workspace_id', workspaceId)
+    .in('status', ['pending', 'expired'])
+    .select('id,workspace_id,user_group_id,status,email,expires_at,updated_at')
+    .single()
 
-  if (error) throw error
+  if (error) {
+    console.error('[Workspace:resendInvitation] Update failed:', {
+      action: 'resend',
+      invitationId,
+      workspaceId,
+      currentMemberId: currentMember.id,
+      currentMemberIsOwner: isWorkspaceOwner(currentMember),
+      currentMemberUserGroupId: currentMember.user_group_id,
+      targetInvitationUserGroupId: invitation.user_group_id,
+      error: describeError(error),
+    })
+    throw new Error('Không tìm thấy lời mời hoặc bạn không có quyền gửi lại')
+  }
+  if (!updatedInvitation) throw new Error('Không tìm thấy lời mời hoặc bạn không có quyền gửi lại')
+  console.log('[Workspace:resendInvitation] Updated invitation row:', {
+    action: 'resend',
+    invitationId,
+    workspaceId,
+    currentMemberId: currentMember.id,
+    currentMemberIsOwner: isWorkspaceOwner(currentMember),
+    currentMemberUserGroupId: currentMember.user_group_id,
+    targetInvitationUserGroupId: updatedInvitation.user_group_id,
+    updatedInvitation,
+    tokenRotated: true,
+  })
 }
 
 export async function removeMember(memberId: string): Promise<void> {
   requireConfigured()
-  if (memberId.startsWith('invitation:')) {
-    const invitationId = memberId.slice('invitation:'.length)
-    const { data: invitation, error: invitationError } = await getSupabase()
-      .from('workspace_invitations')
-      .select('id,workspace_id,email,role')
-      .eq('id', invitationId)
-      .eq('status', 'accepted')
-      .single()
-    if (invitationError) throw toError(invitationError, 'Failed to read accepted invitation')
-    if (!(await hasPermission('member.remove', invitation.workspace_id))) {
-      throw new Error('Permission denied: member.remove')
-    }
-
-    const email = String(invitation.email ?? '').trim().toLowerCase()
-    const { error: memberError } = await getSupabase()
-      .from('workspace_members')
-      .update({ status: 'removed' })
-      .eq('workspace_id', invitation.workspace_id)
-      .eq('email', email)
-      .neq('role', 'owner')
-    if (memberError) throw toError(memberError, 'Failed to remove workspace member')
-
-    const { error: inviteError } = await getSupabase()
-      .from('workspace_invitations')
-      .update({ status: 'revoked', revoked_at: new Date().toISOString() })
-      .eq('id', invitationId)
-    if (inviteError) throw toError(inviteError, 'Failed to update invitation')
-    return
-  }
 
   const { data: member, error: readError } = await getSupabase()
     .from('workspace_members')
-    .select('workspace_id,role')
+    .select('workspace_id,role,user_group_id')
     .eq('id', memberId)
     .single()
+
   if (readError) throw toError(readError, 'Failed to read workspace member')
   if (member.role === 'owner') throw new Error('Cannot remove workspace owner')
+  await assertSameUserGroupOrOwner(member.workspace_id, member.user_group_id)
+
   if (!(await hasPermission('member.remove', member.workspace_id))) {
     throw new Error('Permission denied: member.remove')
   }
-  const { error } = await getSupabase()
+
+  const { data: updatedMember, error } = await getSupabase()
     .from('workspace_members')
-    .update({ status: 'removed' })
+    .update({ status: 'removed', updated_at: new Date().toISOString() })
     .eq('id', memberId)
     .neq('role', 'owner')
+    .select('id,workspace_id,user_id,email,role,status,user_group_id,profile_limit,note,updated_at')
+    .single()
 
-  if (error) throw toError(error, 'Failed to remove workspace member')
+  if (error) {
+    console.error('[Workspace:removeMember] Update failed:', describeError(error))
+    if (isNoRowsError(error)) throw new Error('Không thể xóa thành viên')
+    throw toError(error, 'Failed to remove workspace member')
+  }
+  if (!updatedMember) throw new Error('Không thể xóa thành viên')
+  console.log('[Workspace:removeMember] Updated member row:', updatedMember)
 }
 
 export async function updateMemberRole(memberId: string, role: WorkspaceRole): Promise<void> {
@@ -900,75 +1301,67 @@ export async function updateMemberRole(memberId: string, role: WorkspaceRole): P
   requireConfigured()
   const { data: member, error: readError } = await getSupabase()
     .from('workspace_members')
-    .select('workspace_id,role')
+    .select('workspace_id,role,user_group_id')
     .eq('id', memberId)
     .single()
   if (readError) throw toError(readError, 'Failed to read workspace member')
   if (member.role === 'owner') throw new Error('Cannot update workspace owner')
+  await assertSameUserGroupOrOwner(member.workspace_id, member.user_group_id)
   if (!(await hasPermission('member.edit_role', member.workspace_id))) {
     throw new Error('Permission denied: member.edit_role')
   }
-  const { error } = await getSupabase()
+  const { data: updatedMember, error } = await getSupabase()
     .from('workspace_members')
-    .update({ role })
+    .update({ role, updated_at: new Date().toISOString() })
     .eq('id', memberId)
     .neq('role', 'owner')
+    .select('id,workspace_id,user_id,email,role,status,user_group_id,profile_limit,note,updated_at')
+    .single()
 
-  if (error) throw toError(error, 'Failed to update member role')
+  if (error) {
+    console.error('[Workspace:updateMemberRole] Update failed:', describeError(error))
+    if (isNoRowsError(error)) throw new Error('Không thể cập nhật thành viên')
+    throw toError(error, 'Failed to update member role')
+  }
+  if (!updatedMember) throw new Error('Không thể cập nhật thành viên')
+  console.log('[Workspace:updateMemberRole] Updated member row:', updatedMember)
 }
 
 export async function updateMember(memberId: string, input: UpdateWorkspaceMemberInput): Promise<void> {
   requireConfigured()
-  if (memberId.startsWith('invitation:')) {
-    const invitationId = memberId.slice('invitation:'.length)
-    const { data: invitation, error: invitationError } = await getSupabase()
-      .from('workspace_invitations')
-      .select('id,workspace_id,email,role')
-      .eq('id', invitationId)
-      .eq('status', 'accepted')
-      .single()
-    if (invitationError) throw toError(invitationError, 'Failed to read accepted invitation')
-    if (!(await hasPermission('member.edit_role', invitation.workspace_id))) {
-      throw new Error('Permission denied: member.edit_role')
-    }
-
-    const patch: Record<string, unknown> = {}
-    if (input.role) {
-      if (input.role === 'owner') throw new Error('Cannot assign owner role')
-      patch.role = input.role
-    }
-    if ('userGroupId' in input) patch.user_group_id = input.userGroupId ?? null
-    if ('profileLimit' in input) patch.profile_limit = input.profileLimit ?? null
-    if ('note' in input) patch.note = input.note ?? ''
-    if (Object.keys(patch).length === 0) return
-
-    const email = String(invitation.email ?? '').trim().toLowerCase()
-    const { error: memberError } = await getSupabase()
-      .from('workspace_members')
-      .update(patch)
-      .eq('workspace_id', invitation.workspace_id)
-      .eq('email', email)
-      .neq('role', 'owner')
-    if (memberError) throw toError(memberError, 'Failed to update workspace member')
-
-    const { error: inviteError } = await getSupabase()
-      .from('workspace_invitations')
-      .update(patch)
-      .eq('id', invitationId)
-    if (inviteError) throw toError(inviteError, 'Failed to update invitation')
-    return
-  }
 
   const { data: member, error: readError } = await getSupabase()
     .from('workspace_members')
-    .select('workspace_id,role')
+    .select('workspace_id,role,user_group_id')
     .eq('id', memberId)
     .single()
+
   if (readError) throw toError(readError, 'Failed to read workspace member')
   if (member.role === 'owner') throw new Error('Cannot update workspace owner')
+  await assertSameUserGroupOrOwner(member.workspace_id, member.user_group_id)
+
   if (!(await hasPermission('member.edit_role', member.workspace_id))) {
     throw new Error('Permission denied: member.edit_role')
   }
+  if (!input.userGroupId) {
+    throw new Error('Vui lòng chọn nhóm người dùng cho thành viên')
+  }
+
+  // ✅ Validate userGroupId if provided
+  await assertSameUserGroupOrOwner(member.workspace_id, input.userGroupId)
+
+  if ('userGroupId' in input && input.userGroupId) {
+    const { data: group, error: groupError } = await getSupabase()
+      .from('workspace_user_groups')
+      .select('id,workspace_id')
+      .eq('id', input.userGroupId)
+      .eq('workspace_id', member.workspace_id)
+      .maybeSingle()
+
+    if (groupError) throw toError(groupError, 'Failed to validate user group')
+    if (!group) throw new Error('Nhóm người dùng không tồn tại hoặc không thuộc workspace này')
+  }
+
   const patch: Record<string, unknown> = {}
   if (input.role) {
     if (input.role === 'owner') throw new Error('Cannot assign owner role')
@@ -978,14 +1371,31 @@ export async function updateMember(memberId: string, input: UpdateWorkspaceMembe
   if ('profileLimit' in input) patch.profile_limit = input.profileLimit ?? null
   if ('note' in input) patch.note = input.note ?? ''
   if (Object.keys(patch).length === 0) return
+  patch.updated_at = new Date().toISOString()
 
-  const { error } = await getSupabase()
+  const { data: updatedMember, error } = await getSupabase()
     .from('workspace_members')
     .update(patch)
     .eq('id', memberId)
     .neq('role', 'owner')
+    .select('id,workspace_id,user_id,email,role,status,user_group_id,profile_limit,note,updated_at')
+    .single()
 
-  if (error) throw toError(error, 'Failed to update workspace member')
+  if (error) {
+    console.error('[Workspace:updateMember] Update failed:', describeError(error))
+    if (isNoRowsError(error)) throw new Error('Không thể cập nhật thành viên')
+    throw toError(error, 'Failed to update workspace member')
+  }
+  if (!updatedMember) throw new Error('Không thể cập nhật thành viên')
+  console.log('[Workspace:updateMember] Updated member row:', updatedMember)
+
+  if ('profileIds' in input || 'groupIds' in input) {
+    const authorizationMode = await getWorkspaceAuthorizationMode(member.workspace_id)
+    await updateMemberAuthorizations(memberId, {
+      profileIds: authorizationMode === 'profile' ? uniqueStrings(input.profileIds) : [],
+      groupIds: authorizationMode === 'group' ? uniqueStrings(input.groupIds) : [],
+    })
+  }
 }
 
 export async function getMyPermissions(workspaceId = currentWorkspaceId): Promise<RolePermissionMap> {
@@ -995,14 +1405,18 @@ export async function getMyPermissions(workspaceId = currentWorkspaceId): Promis
   const user = await requireUser()
   const { data: member, error: memberError } = await getSupabase()
     .from('workspace_members')
-    .select('role,user_group_id')
+    .select('role,user_group_id,status')
     .eq('workspace_id', workspaceId)
     .eq('user_id', user.id)
-    .eq('status', 'active')
+    .eq('status', 'active')  // ✅ Only active members
     .maybeSingle()
 
-  if (memberError) throw memberError
-  if (member?.role === 'owner') return DefaultRolePermissionMap.owner
+  if (memberError || !member) {
+    // Not an active member - return empty permissions
+    return emptyPermissionMap()
+  }
+
+  if (member.role === 'owner') return DefaultRolePermissionMap.owner
   if (member?.user_group_id) {
     const { data: group, error: groupError } = await getSupabase()
       .from('workspace_user_groups')

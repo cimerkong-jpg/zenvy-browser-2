@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react'
+import { dialog } from '../store/useDialog'
 
 interface Cookie {
   domain: string
@@ -49,7 +50,12 @@ export default function CookieManager({ profileId, onClose }: Props) {
   }
 
   const handleClear = async () => {
-    if (confirm('Xóa tất cả cookies?')) {
+    const confirmed = await dialog.confirmDelete(
+      'Xóa cookies',
+      'Xóa tất cả cookies?'
+    )
+
+    if (confirmed) {
       await window.api.cookies.clear(profileId)
       setCookies([])
     }

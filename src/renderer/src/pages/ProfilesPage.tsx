@@ -3,6 +3,8 @@ import { createPortal } from 'react-dom'
 import type { ReactNode } from 'react'
 import { useStore } from '../store/useStore'
 import { useWorkspace } from '../store/useWorkspace'
+import { toast } from '../store/useToast'
+import { dialog } from '../store/useDialog'
 import ProfileModal from '../components/ProfileModal'
 import ProfileRow from '../components/ProfileRow'
 import QuickEditProfileModal from '../components/QuickEditProfileModal'
@@ -52,7 +54,7 @@ export default function ProfilesPage() {
   const [groupPanelWidth, setGroupPanelWidth] = useState(304)
   const [isReloading, setIsReloading] = useState(false)
   const [showAutoModal, setShowAutoModal] = useState(false)
-  
+
   // Group modals state
   const [showCreateGroupModal, setShowCreateGroupModal] = useState(false)
   const [editingGroup, setEditingGroup] = useState<{ id: string; name: string } | null>(null)
@@ -122,7 +124,7 @@ export default function ProfilesPage() {
   }, [profiles, runningIds, searchQuery, selectedGroupId, statusFilter, sortBy])
 
   const allSelected = filtered.length > 0 && filtered.every((profile) => selectedIds.includes(profile.id))
-  
+
   // Calculate stats based on filtered profiles (current group)
   const openCount = filtered.filter(p => runningIds.includes(p.id)).length
   const closedCount = filtered.filter(p => !runningIds.includes(p.id)).length
@@ -143,18 +145,40 @@ export default function ProfilesPage() {
 
   const handleDeleteGroup = async (groupId: string) => {
     if (!hasPermission('group.delete')) return
-    await window.api.groups.delete(groupId)
-    if (selectedGroupId === groupId) setSelectedGroupId(null)
-    await loadAll()
+    try {
+      await window.api.groups.delete(groupId)
+      if (selectedGroupId === groupId) setSelectedGroupId(null)
+      await loadAll()
+      toast.success('Đã xóa nhóm hồ sơ')
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : 'Không thể xóa nhóm hồ sơ')
+      throw error
+    }
   }
 
   const deleteSelected = async () => {
     if (!hasPermission('profile.delete')) return
     if (!selectedIds.length) return
-    if (!confirm(`Xóa ${selectedIds.length} hồ sơ đã chọn?`)) return
-    await window.api.profiles.deleteMany(selectedIds)
-    clearSelection()
-    await loadAll()
+
+    const confirmed = await dialog.confirmDelete(
+      'Xóa hồ sơ',
+      `Xóa ${selectedIds.length} hồ sơ đã chọn?`
+    )
+
+    if (confirmed) {
+      try {
+        const count = selectedIds.length
+        await window.api.profiles.deleteMany(selectedIds)
+        clearSelection()
+        await loadAll()
+        return toast.success(`Đã xóa ${count} hồ sơ`)
+        toast.success(`Đã xóa ${count} hồ sơ`)
+      } catch (error) {
+        return toast.error(error instanceof Error ? error.message : 'Không thể xóa hồ sơ')
+        toast.error(error instanceof Error ? error.message : 'Không thể xóa hồ sơ')
+      }
+      toast.success(`Đã xóa ${selectedIds.length} hồ sơ`)
+    }
   }
 
   const exportSelected = async () => {
@@ -196,12 +220,12 @@ export default function ProfilesPage() {
         const rawText = await file.text()
         const parsed = JSON.parse(rawText)
         if (!parsed.profiles || !Array.isArray(parsed.profiles)) {
-          alert('File không hợp lệ')
+          toast.error('File không hợp lệ')
           return
         }
         setImportData({ profiles: parsed.profiles, rawText })
       } catch (error) {
-        alert('Lỗi đọc file: ' + (error as Error).message)
+        toast.error('Lỗi đọc file: ' + (error as Error).message)
       }
     }
     input.click()
@@ -213,9 +237,9 @@ export default function ProfilesPage() {
       const imported = await window.api.profiles.import(payload)
       setImportData(null)
       await loadAll()
-      alert(`Đã import ${imported.length} hồ sơ`)
+      toast.success(`Đã import ${imported.length} hồ sơ`)
     } catch (error) {
-      alert('Lỗi import: ' + (error as Error).message)
+      toast.error('Lỗi import: ' + (error as Error).message)
     }
   }
 
@@ -276,9 +300,9 @@ export default function ProfilesPage() {
                   const windowWidth = window.innerWidth
                   // Align to right if near screen edge
                   const alignRight = rect.right > windowWidth - 200
-                  setSortMenuPos({ 
-                    x: alignRight ? rect.right - 200 : rect.left, 
-                    y: rect.bottom + 4 
+                  setSortMenuPos({
+                    x: alignRight ? rect.right - 200 : rect.left,
+                    y: rect.bottom + 4
                   })
                 }
                 setShowSortMenu(v => !v)
@@ -507,7 +531,7 @@ export default function ProfilesPage() {
 
         {showCreate && <ProfileModal profile={null} onClose={() => setShowCreate(false)} />}
         {editProfile && <ProfileModal profile={editProfile} onClose={() => setEditProfile(null)} />}
-        
+
         {/* Quick Edit Modal */}
         {quickEditProfile && (
           <QuickEditProfileModal
@@ -518,7 +542,7 @@ export default function ProfilesPage() {
             onSave={handleQuickEditSave}
           />
         )}
-        
+
         {/* Group Modals */}
         {showCreateGroupModal && (
           <CreateGroupModal
@@ -541,7 +565,7 @@ export default function ProfilesPage() {
             onDelete={() => handleDeleteGroup(deletingGroup.id)}
           />
         )}
-        
+
         {showAutoModal && (
           <AutomationQuickModal
             selectedProfiles={profiles.filter(p => selectedIds.includes(p.id))}

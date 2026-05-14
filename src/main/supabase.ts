@@ -18,7 +18,7 @@ function readRuntimeConfig(): SupabaseRuntimeConfig {
   for (const path of candidates) {
     try {
       if (!existsSync(path)) continue
-      return JSON.parse(readFileSync(path, 'utf-8')) as SupabaseRuntimeConfig
+      return JSON.parse(readFileSync(path, 'utf-8').replace(/^\uFEFF/, '')) as SupabaseRuntimeConfig
     } catch (err) {
       console.warn('[Supabase] Failed to read runtime config:', err)
     }
@@ -32,11 +32,6 @@ const runtimeConfig = readRuntimeConfig()
 // Supabase configuration from environment variables or packaged runtime config
 const SUPABASE_URL = process.env.SUPABASE_URL || runtimeConfig.SUPABASE_URL || ''
 const SUPABASE_ANON_KEY = process.env.SUPABASE_ANON_KEY || runtimeConfig.SUPABASE_ANON_KEY || ''
-
-// Debug logs (remove after testing)
-console.log('[Supabase] Configuration check:')
-console.log('  SUPABASE_URL:', SUPABASE_URL ? `${SUPABASE_URL.substring(0, 30)}...` : 'NOT SET')
-console.log('  SUPABASE_ANON_KEY:', SUPABASE_ANON_KEY ? `${SUPABASE_ANON_KEY.substring(0, 20)}...` : 'NOT SET')
 
 let supabaseClient: SupabaseClient | null = null
 

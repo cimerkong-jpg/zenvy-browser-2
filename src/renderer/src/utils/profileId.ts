@@ -2,7 +2,10 @@
  * Generate a numeric ID from UUID for display purposes
  * Uses the profile's creation order (index) starting from 1001
  */
-export function getDisplayId(uuid: string, allProfiles: Array<{ id: string; createdAt: number }>): string {
+export function getDisplayId(uuid: string, allProfiles: Array<{ id: string; createdAt: number; displayId?: string }>): string {
+  const profile = allProfiles.find((item) => item.id === uuid)
+  if (profile?.displayId) return profile.displayId
+
   // If already a numeric ID format, return it
   if (uuid.startsWith('profile-')) {
     return uuid.replace('profile-', '')

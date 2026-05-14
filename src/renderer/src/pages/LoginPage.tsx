@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { useAuth } from '../store/useAuth'
 
 interface LoginPageProps {
@@ -6,9 +6,18 @@ interface LoginPageProps {
 }
 
 export default function LoginPage({ onNavigateToRegister }: LoginPageProps) {
-  const [email, setEmail] = useState('')
-  const [password, setPassword] = useState('')
+  const [email, setEmail] = useState(() => localStorage.getItem('zenvy:rememberEmail') || localStorage.getItem('zenvy:lastLoginEmail') || '')
+  const [password, setPassword] = useState(() => localStorage.getItem('zenvy:rememberPassword') || '')
+  const [rememberAccount, setRememberAccount] = useState(() => localStorage.getItem('zenvy:rememberAccount') === 'true')
   const { signIn, isLoading, error, clearError } = useAuth()
+
+  useEffect(() => {
+    const rememberedEmail = localStorage.getItem('zenvy:rememberEmail')
+    const rememberedPassword = localStorage.getItem('zenvy:rememberPassword')
+    const lastEmail = localStorage.getItem('zenvy:lastLoginEmail')
+    if (!email && (rememberedEmail || lastEmail)) setEmail(rememberedEmail || lastEmail || '')
+    if (!password && rememberedPassword) setPassword(rememberedPassword)
+  }, [])
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -20,6 +29,15 @@ export default function LoginPage({ onNavigateToRegister }: LoginPageProps) {
 
     try {
       await signIn(email, password)
+      localStorage.setItem('zenvy:lastLoginEmail', email.trim())
+      localStorage.setItem('zenvy:rememberAccount', rememberAccount ? 'true' : 'false')
+      if (rememberAccount) {
+        localStorage.setItem('zenvy:rememberEmail', email.trim())
+        localStorage.setItem('zenvy:rememberPassword', password)
+      } else {
+        localStorage.removeItem('zenvy:rememberEmail')
+        localStorage.removeItem('zenvy:rememberPassword')
+      }
       // Navigation will be handled by App.tsx
     } catch (err) {
       // Error is already set in store
@@ -33,7 +51,7 @@ export default function LoginPage({ onNavigateToRegister }: LoginPageProps) {
         {/* Logo */}
         <div className="mb-8 text-center">
           <h1 className="text-3xl font-bold text-white">Zenvy Browser</h1>
-          <p className="mt-2 text-sm text-slate-400">Sign in to your account</p>
+          <p className="mt-2 text-sm text-slate-400">Đăng nhập vào tài khoản của bạn</p>
         </div>
 
         {/* Form Card */}
@@ -65,7 +83,7 @@ export default function LoginPage({ onNavigateToRegister }: LoginPageProps) {
             {/* Password */}
             <div>
               <label className="block text-sm font-medium text-slate-300 mb-2">
-                Password
+                Mật khẩu
               </label>
               <input
                 type="password"
@@ -78,26 +96,37 @@ export default function LoginPage({ onNavigateToRegister }: LoginPageProps) {
               />
             </div>
 
+            <label className="flex cursor-pointer items-center gap-2 text-sm font-medium text-slate-300">
+              <input
+                type="checkbox"
+                checked={rememberAccount}
+                onChange={(event) => setRememberAccount(event.target.checked)}
+                disabled={isLoading}
+                className="h-4 w-4 rounded border-purple-500/20 bg-white/5 accent-purple-600"
+              />
+              <span>Lưu tài khoản</span>
+            </label>
+
             {/* Submit Button */}
             <button
               type="submit"
               disabled={isLoading || !email || !password}
               className="w-full rounded-lg bg-gradient-to-r from-violet-600 to-purple-600 px-4 py-3 text-sm font-medium text-white hover:shadow-[0_0_20px_rgba(139,92,246,0.4)] transition-all disabled:opacity-50 disabled:cursor-not-allowed"
             >
-              {isLoading ? 'Signing in...' : 'Sign In'}
+              {isLoading ? 'Đang đăng nhập...' : 'Đăng nhập'}
             </button>
           </form>
 
           {/* Register Link */}
           <div className="mt-6 text-center">
             <p className="text-sm text-slate-400">
-              Don't have an account?{' '}
+              Chưa có tài khoản?{' '}
               <button
                 type="button"
                 onClick={onNavigateToRegister}
                 className="font-medium text-purple-400 hover:text-purple-300 transition-colors"
               >
-                Sign up
+                Đăng ký
               </button>
             </p>
           </div>
@@ -106,7 +135,7 @@ export default function LoginPage({ onNavigateToRegister }: LoginPageProps) {
         {/* Info */}
         <div className="mt-6 text-center">
           <p className="text-xs text-slate-500">
-            Cloud sync powered by Supabase
+            Đồng bộ đám mây qua Supabase
           </p>
         </div>
       </div>

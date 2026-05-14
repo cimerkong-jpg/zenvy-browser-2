@@ -2,9 +2,7 @@ import { useMemo, useState, useEffect, useRef } from 'react'
 import { createPortal } from 'react-dom'
 import type { ReactNode } from 'react'
 import { useStore } from '../store/useStore'
-import { useAuth } from '../store/useAuth'
 import { useWorkspace } from '../store/useWorkspace'
-import WorkspaceSwitcher from '../components/WorkspaceSwitcher'
 import ProfileModal from '../components/ProfileModal'
 import ProfileRow from '../components/ProfileRow'
 import QuickEditProfileModal from '../components/QuickEditProfileModal'
@@ -38,7 +36,6 @@ export default function ProfilesPage() {
     setSearchQuery,
     loadAll
   } = useStore()
-  const { user, signOut } = useAuth()
   const { hasPermission } = useWorkspace()
 
   const [editProfile, setEditProfile] = useState<Profile | null>(null)
@@ -46,14 +43,13 @@ export default function ProfilesPage() {
   const [statusFilter, setStatusFilter] = useState<StatusFilter>('all')
   const [sortBy, setSortBy] = useState<SortBy>('default')
   const [showSortMenu, setShowSortMenu] = useState(false)
-  const [showAccountMenu, setShowAccountMenu] = useState(false)
   const [sortMenuPos, setSortMenuPos] = useState({ x: 0, y: 0 })
   const [importData, setImportData] = useState<{ profiles: any[]; rawText: string } | null>(null)
   const sortRef = useRef<HTMLButtonElement>(null)
   const [moveTargetGroupId, setMoveTargetGroupId] = useState('')
   const [showMoveGroupModal, setShowMoveGroupModal] = useState(false)
   const [groupPanelCollapsed, setGroupPanelCollapsed] = useState(false)
-  const [groupPanelWidth, setGroupPanelWidth] = useState(256)
+  const [groupPanelWidth, setGroupPanelWidth] = useState(304)
   const [isReloading, setIsReloading] = useState(false)
   const [showAutoModal, setShowAutoModal] = useState(false)
   
@@ -125,7 +121,6 @@ export default function ProfilesPage() {
     return sorted
   }, [profiles, runningIds, searchQuery, selectedGroupId, statusFilter, sortBy])
 
-  const selectedGroup = selectedGroupId ? groups.find((group) => group.id === selectedGroupId) : null
   const allSelected = filtered.length > 0 && filtered.every((profile) => selectedIds.includes(profile.id))
   
   // Calculate stats based on filtered profiles (current group)
@@ -225,94 +220,9 @@ export default function ProfilesPage() {
   }
 
   return (
-    <div className="flex h-full min-w-0 flex-col">
-      {/* Topbar */}
-      <div className="drag-region flex-shrink-0 h-12 border-b border-[#1F2230] bg-[#0B0B0F] flex items-center justify-between px-6">
-        <div className="no-drag flex items-center gap-6">
-          <WorkspaceSwitcher />
-          <nav className="flex items-center gap-1">
-            <button className="px-3 py-1.5 text-xs font-medium text-[#9CA3AF] hover:text-[#E5E7EB] hover:bg-white/5 rounded-md transition-all">
-              Cài Đặt Workspace
-            </button>
-            <button className="px-3 py-1.5 text-xs font-medium text-[#9CA3AF] hover:text-[#E5E7EB] hover:bg-white/5 rounded-md transition-all">
-              Nạp Tiền
-            </button>
-            <button className="px-3 py-1.5 text-xs font-medium text-[#9CA3AF] hover:text-[#E5E7EB] hover:bg-white/5 rounded-md transition-all">
-              Mua Gói
-            </button>
-            <button className="px-3 py-1.5 text-xs font-medium text-[#9CA3AF] hover:text-[#E5E7EB] hover:bg-white/5 rounded-md transition-all">
-              Kênh Hỗ Trợ
-            </button>
-            <button className="px-3 py-1.5 text-xs font-medium text-[#9CA3AF] hover:text-[#E5E7EB] hover:bg-white/5 rounded-md transition-all">
-              Tiếp Thị Liên Kết
-            </button>
-          </nav>
-        </div>
-
-        {/* Account Avatar */}
-        <div className="no-drag flex items-center gap-3">
-          {user && (
-            <div className="relative">
-              <button
-                onClick={() => setShowAccountMenu(!showAccountMenu)}
-                className="w-9 h-9 rounded-full bg-gradient-to-br from-[#7C3AED] to-[#A78BFA] flex items-center justify-center text-white font-bold text-sm hover:shadow-lg transition-all"
-              >
-                {user.email?.charAt(0).toUpperCase() || 'U'}
-              </button>
-
-              {/* Account Menu Dropdown */}
-              {showAccountMenu && createPortal(
-                <>
-                  <div 
-                    className="fixed inset-0 z-40" 
-                    onClick={() => setShowAccountMenu(false)}
-                  />
-                  <div className="fixed z-50 w-64 rounded-lg border border-[#1F2230] bg-[#1B2333] shadow-xl p-2"
-                    style={{
-                      top: '52px',
-                      right: '24px'
-                    }}
-                  >
-                    <div className="px-3 py-2 border-b border-[#1F2230] mb-2">
-                      <p className="text-[11px] text-[#6B7280]">Tài khoản</p>
-                      <p className="text-[13px] font-medium text-[#E5E7EB] truncate" title={user.email}>
-                        {user.email}
-                      </p>
-                    </div>
-                    <button
-                      onClick={() => {
-                        setShowAccountMenu(false)
-                        // Navigate to settings
-                      }}
-                      className="w-full rounded-md bg-[#1F2230] px-3 py-2 text-[12px] font-medium text-[#E5E7EB] hover:bg-[#2A2D3A] transition-all flex items-center gap-2 mb-2"
-                    >
-                      <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" />
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
-                      </svg>
-                      Cài đặt tài khoản
-                    </button>
-                    <button
-                      onClick={async () => {
-                        setShowAccountMenu(false)
-                        await signOut()
-                      }}
-                      className="w-full rounded-md bg-red-500/10 border border-red-500/20 px-3 py-2 text-[12px] font-medium text-red-400 hover:bg-red-500/20 transition-all"
-                    >
-                      Đăng xuất
-                    </button>
-                  </div>
-                </>,
-                document.body
-              )}
-            </div>
-          )}
-        </div>
-      </div>
-
-      {/* Main Content Area */}
-      <div className="flex flex-1 min-h-0">
-        <GroupPanel
+    <div className="flex h-full min-w-0">
+      <GroupPanel
+        profiles={profiles}
         groups={groups}
         selectedGroupId={selectedGroupId}
         setSelectedGroupId={setSelectedGroupId}
@@ -328,24 +238,6 @@ export default function ProfilesPage() {
         <section className="flex min-w-0 flex-1 flex-col">
           {/* ── Header + Actions ── */}
           <div className="no-drag border-b border-[#1F2230] px-6 py-4">
-            {/* Title + Primary Action */}
-            <div className="flex items-center justify-between mb-4">
-              <div>
-                <h1 className="text-xl font-semibold text-[#E5E7EB]">Profiles</h1>
-                <p className="mt-0.5 text-sm text-[#6B7280]">
-                  {selectedGroup?.name ?? 'All'} · {filtered.length} {filtered.length === 1 ? 'profile' : 'profiles'}
-                </p>
-              </div>
-              <button
-                onClick={() => setShowCreate(true)}
-                disabled={!hasPermission('profile.create')}
-                className="rounded-lg bg-[#7C3AED] px-4 py-2 text-sm font-medium text-white hover:bg-[#8B5CF6] transition-colors"
-                title={!hasPermission('profile.create') ? 'Bạn không có quyền tạo profile' : undefined}
-              >
-                + New Profile
-              </button>
-            </div>
-
           {/* Search + Filters + Actions */}
           <div className="flex items-center gap-3">
             {/* Search */}
@@ -424,6 +316,15 @@ export default function ProfilesPage() {
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
                 </svg>
               )}
+            </button>
+
+            <button
+              onClick={() => setShowCreate(true)}
+              disabled={!hasPermission('profile.create')}
+              className="h-9 flex-shrink-0 rounded-lg bg-[#7C3AED] px-4 text-sm font-semibold text-white transition-colors hover:bg-[#8B5CF6] disabled:cursor-not-allowed disabled:opacity-50"
+              title={!hasPermission('profile.create') ? 'Bạn không có quyền tạo profile' : undefined}
+            >
+              + New Profile
             </button>
           </div>
 
@@ -533,11 +434,11 @@ export default function ProfilesPage() {
         </div>
 
         {/* ── Stats — Compact ── */}
-        <div className="no-drag grid grid-cols-4 gap-2 px-6 py-3">
+        <div className="no-drag grid grid-cols-4 gap-2.5 px-6 py-3">
           <CompactStat label="Total" value={filtered.length} />
-          <CompactStat label="Open" value={openCount} tone="purple" />
+          <CompactStat label="Open" value={openCount} tone="green" />
           <CompactStat label="Closed" value={closedCount} tone="orange" />
-          <CompactStat label="Selected" value={selectedCount} tone="purple" />
+          <CompactStat label="Selected" value={selectedCount} tone="blue" />
         </div>
 
         <div className="min-h-0 flex-1 px-4 pb-4">
@@ -569,10 +470,8 @@ export default function ProfilesPage() {
                       <td colSpan={8} className="py-16 text-center">
                         <div className="mx-auto flex max-w-sm flex-col items-center gap-2">
                           <div className="flex h-12 w-12 items-center justify-center rounded-full border border-purple-500/20 bg-purple-500/10 text-xl text-purple-300">
-                            ▣
+                            <EmptyProfilesIcon className="h-6 w-6" />
                           </div>
-                          <p className="text-sm font-medium text-white">No profiles</p>
-                          <p className="text-xs text-slate-400">Create your first profile to get started</p>
                           <button
                             onClick={() => setShowCreate(true)}
                             className="mt-2 rounded-lg bg-gradient-to-r from-violet-600 to-purple-600 px-4 py-2 text-sm font-medium text-white hover:shadow-[0_0_20px_rgba(139,92,246,0.4)] transition-all"
@@ -682,7 +581,6 @@ export default function ProfilesPage() {
           />
         )}
       </section>
-      </div>
     </div>
   )
 }
@@ -709,13 +607,12 @@ function GroupItem({
   const [buttonRef, setButtonRef] = useState<HTMLButtonElement | null>(null)
   const [menuPosition, setMenuPosition] = useState({ top: 0, left: 0 })
 
-  // Calculate menu position when it opens
   useEffect(() => {
     if (isMenuOpen && buttonRef) {
       const rect = buttonRef.getBoundingClientRect()
       setMenuPosition({
         top: rect.top,
-        left: rect.left - 176 // 176px = w-44 (11rem = 176px)
+        left: Math.max(8, rect.left - 176)
       })
     }
   }, [isMenuOpen, buttonRef])
@@ -724,30 +621,28 @@ function GroupItem({
     <div className="relative">
       <button
         onClick={onSelect}
-        className={`w-full rounded-lg px-3 py-2 text-left text-sm font-semibold transition-all ${
-          isSelected ? 'bg-purple-500/15 text-white' : 'text-slate-300 hover:bg-white/5'
+        className={`flex w-full items-center gap-2 rounded-lg px-3 py-2.5 text-left text-sm font-bold transition-all ${
+          isSelected ? 'bg-[#243752] text-white' : 'text-[#D7DEE8] hover:bg-white/5 hover:text-white'
         }`}
       >
-        <span className="truncate pr-8">{group.name}</span>
+        <FolderIcon className={isSelected ? 'h-4 w-4 shrink-0 text-[#60A5FA]' : 'h-4 w-4 shrink-0 text-[#8EA0B5]'} />
+        <span className="min-w-0 flex-1 truncate">{group.name}</span>
       </button>
-      
+
       <button
         ref={setButtonRef}
         onClick={onToggleMenu}
-        className="absolute right-2 top-1/2 -translate-y-1/2 z-10 flex h-6 w-6 items-center justify-center rounded hover:bg-white/10 text-slate-400 hover:text-white"
-        title="Tùy chọn"
+        className="absolute right-2 top-1/2 z-10 flex h-6 w-6 -translate-y-1/2 items-center justify-center rounded text-[#8EA0B5] hover:bg-white/10 hover:text-white"
+        title={'T\u00f9y ch\u1ecdn'}
       >
-        ⋮
+        <MoreVerticalIcon className="h-4 w-4" />
       </button>
-      
+
       {isMenuOpen && createPortal(
         <>
-          <div 
-            className="fixed inset-0 z-40" 
-            onClick={onCloseMenu}
-          />
-          <div 
-            className="fixed z-50 w-44 rounded-lg border border-white/10 bg-[#1F2937] py-1.5 shadow-[0_8px_24px_rgba(0,0,0,0.5)]"
+          <div className="fixed inset-0 z-40" onClick={onCloseMenu} />
+          <div
+            className="fixed z-50 w-44 rounded-lg border border-dashed border-[#344153] bg-[#1B2431] py-1.5 shadow-[0_8px_24px_rgba(0,0,0,0.5)]"
             style={{ top: `${menuPosition.top}px`, left: `${menuPosition.left}px` }}
           >
             <button
@@ -755,24 +650,20 @@ function GroupItem({
                 e.stopPropagation()
                 onEdit()
               }}
-              className="flex w-full items-center gap-3 px-4 py-2.5 text-left text-sm text-slate-300 hover:bg-purple-500/10 hover:text-white transition-colors"
+              className="flex w-full items-center gap-3 px-4 py-2.5 text-left text-sm text-[#D7DEE8] transition-colors hover:bg-[#243752] hover:text-white"
             >
-              <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
-              </svg>
-              <span>Chỉnh sửa</span>
+              <EditIcon className="h-4 w-4" />
+              <span>{'Ch\u1ec9nh s\u1eeda'}</span>
             </button>
             <button
               onClick={(e) => {
                 e.stopPropagation()
                 onDelete()
               }}
-              className="flex w-full items-center gap-3 px-4 py-2.5 text-left text-sm text-red-400 hover:bg-red-500/10"
+              className="flex w-full items-center gap-3 px-4 py-2.5 text-left text-sm text-red-400 transition-colors hover:bg-red-500/10"
             >
-              <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
-              </svg>
-              <span>Xóa</span>
+              <TrashIcon className="h-4 w-4" />
+              <span>{'X\u00f3a'}</span>
             </button>
           </div>
         </>,
@@ -781,8 +672,8 @@ function GroupItem({
     </div>
   )
 }
-
 function GroupPanel({
+  profiles,
   groups,
   selectedGroupId,
   setSelectedGroupId,
@@ -794,6 +685,7 @@ function GroupPanel({
   onEditGroup,
   onDeleteGroup
 }: {
+  profiles: Profile[]
   groups: Array<{ id: string; name: string }>
   selectedGroupId: string | null
   setSelectedGroupId: (id: string | null) => void
@@ -812,7 +704,7 @@ function GroupPanel({
     const startX = e.clientX
     const startW = width
     const onMove = (ev: MouseEvent) => {
-      const next = Math.max(160, Math.min(400, startW + ev.clientX - startX))
+      const next = Math.max(280, Math.min(400, startW + ev.clientX - startX))
       onWidthChange(next)
     }
     const onUp = () => {
@@ -825,17 +717,16 @@ function GroupPanel({
 
   if (collapsed) {
     return (
-      <aside className="group-panel no-drag flex w-12 flex-shrink-0 flex-col items-center border-r border-purple-500/10 bg-[#0F1020]/70 pb-4">
-        <div className="drag-region h-8 w-full flex-shrink-0" />
+      <aside className="group-panel no-drag flex w-14 flex-shrink-0 flex-col items-center bg-transparent px-2 py-5">
         <button
           onClick={() => setCollapsed(false)}
-          className="mt-2 flex h-9 w-9 items-center justify-center rounded-lg border border-white/10 bg-white/[0.04] text-slate-300 hover:bg-white/[0.08] hover:text-white"
-          title="Mở nhóm hồ sơ"
+          className="flex h-9 w-9 items-center justify-center rounded-lg border border-dashed border-[#344153] bg-[#171F2A] text-[#8EA0B5] hover:bg-[#202B38] hover:text-white"
+          title={'M\u1edf nh\u00f3m h\u1ed3 s\u01a1'}
         >
-          ›
+          <ChevronRightIcon className="h-4 w-4" />
         </button>
-        <div className="mt-4 writing-mode-vertical text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500">
-          Nhóm
+        <div className="mt-4 writing-mode-vertical text-[11px] font-bold uppercase tracking-[0.18em] text-[#7C8796]">
+          {'Nh\u00f3m'}
         </div>
       </aside>
     )
@@ -843,88 +734,171 @@ function GroupPanel({
 
   return (
     <aside
-      className="group-panel no-drag relative flex flex-shrink-0 flex-col border-r border-purple-500/10 bg-[#0F1020]/70 px-4 pb-4"
+      className="group-panel no-drag relative flex flex-shrink-0 bg-transparent px-4 py-5"
       style={{ width }}
     >
-      {/* Drag handle */}
       <div
         onMouseDown={startResize}
-        className="absolute right-0 top-0 bottom-0 w-1 cursor-col-resize hover:bg-purple-500/40 transition-colors group/resizer z-20"
-        title="Kéo để thay đổi chiều rộng"
+        className="absolute bottom-5 right-4 top-5 z-20 w-2 cursor-col-resize rounded-r-xl transition-colors hover:bg-[#2F80ED]/12 group/resizer"
+        title={'Kéo để thay đổi chiều rộng nhóm'}
       >
-        <div className="absolute right-0 top-1/2 -translate-y-1/2 h-8 w-1 rounded-full bg-purple-500/0 group-hover/resizer:bg-purple-500/60 transition-colors" />
-      </div>
-      <div className="drag-region h-8 flex-shrink-0" />
-      <div className="mb-4 flex items-center justify-between">
-        <div>
-          <h2 className="text-base font-semibold text-white">Nhóm hồ sơ</h2>
-          <p className="mt-1 text-xs text-slate-500">{groups.length} nhóm</p>
-        </div>
-        <div className="flex items-center gap-2">
-          <button
-            onClick={onCreateGroup}
-            className="rounded-lg bg-white px-3 py-1.5 text-xs font-semibold text-slate-900 hover:bg-slate-200"
-          >
-            + Mới
-          </button>
-          <button
-            onClick={() => setCollapsed(true)}
-            className="flex h-8 w-8 items-center justify-center rounded-lg border border-white/10 bg-white/[0.04] text-slate-400 hover:bg-white/[0.08] hover:text-white"
-            title="Thu gọn nhóm hồ sơ"
-          >
-            ‹
-          </button>
-        </div>
+        <div className="absolute right-0 top-1/2 h-8 w-0.5 -translate-y-1/2 rounded-full bg-[#2F80ED]/0 transition-colors group-hover/resizer:bg-[#2F80ED]/70" />
       </div>
 
-      <div className="mb-3">
-        <button
-          onClick={() => setSelectedGroupId(null)}
-          className={`w-full rounded-lg px-3 py-2.5 text-left text-sm font-semibold transition-all ${
-            selectedGroupId === null ? 'bg-purple-500/15 text-white' : 'text-slate-400 hover:bg-white/5 hover:text-white'
-          }`}
-        >
-          Tất cả
-        </button>
-        <button 
-          onClick={() => setSelectedGroupId('no-group')}
-          className={`mt-1 w-full rounded-lg px-3 py-2 text-left text-sm font-semibold transition-all ${
-            selectedGroupId === 'no-group' ? 'bg-purple-500/15 text-white' : 'text-slate-300 hover:bg-white/5 hover:text-white'
-          }`}
-        >
-          Không có nhóm
-        </button>
-      </div>
+      <div className="mkt-panel absolute inset-x-4 bottom-5 top-5 z-0" />
+      <div className="relative z-10 flex min-h-0 w-full flex-col px-3 py-3">
+        <div className="mb-5 flex items-start justify-between gap-3">
+          <div className="min-w-0">
+            <h2 className="whitespace-nowrap text-[17px] font-extrabold leading-tight text-white">{'Nh\u00f3m h\u1ed3 s\u01a1'}</h2>
+            <p className="mt-1 text-xs font-medium text-[#8EA0B5]">{groups.length} {'nh\u00f3m'}</p>
+          </div>
+          <div className="flex items-center gap-2">
+            <button
+              onClick={onCreateGroup}
+              className="flex h-8 items-center gap-1.5 rounded-lg bg-white px-3 text-xs font-bold text-[#111827] hover:bg-[#E5E7EB]"
+            >
+              <PlusCircleIcon className="h-4 w-4" />
+              {'M\u1edbi'}
+            </button>
+            <button
+              onClick={() => setCollapsed(true)}
+              className="flex h-8 w-8 items-center justify-center rounded-lg border border-dashed border-[#344153] bg-[#171F2A] text-[#8EA0B5] hover:bg-[#202B38] hover:text-white"
+              title={'Thu g\u1ecdn nh\u00f3m h\u1ed3 s\u01a1'}
+            >
+              <ChevronLeftIcon className="h-4 w-4" />
+            </button>
+          </div>
+        </div>
 
-      <div className="space-y-1 overflow-y-auto">
-        {groups.map((group) => {
-          const isMenuOpen = openMenuId === group.id
-          
-          return (
-            <GroupItem
-              key={group.id}
-              group={group}
-              isSelected={selectedGroupId === group.id}
-              isMenuOpen={isMenuOpen}
-              onSelect={() => setSelectedGroupId(group.id)}
-              onToggleMenu={(e) => {
-                e.stopPropagation()
-                setOpenMenuId(isMenuOpen ? null : group.id)
-              }}
-              onEdit={() => {
-                setOpenMenuId(null)
-                onEditGroup({ id: group.id, name: group.name })
-              }}
-              onDelete={() => {
-                setOpenMenuId(null)
-                onDeleteGroup({ id: group.id, name: group.name })
-              }}
-              onCloseMenu={() => setOpenMenuId(null)}
-            />
-          )
-        })}
+        <div className="mb-3 space-y-1">
+          <GroupFilterItem
+            label={'T\u1ea5t c\u1ea3'}
+            active={selectedGroupId === null}
+            onClick={() => setSelectedGroupId(null)}
+          />
+          <GroupFilterItem
+            label={'Kh\u00f4ng c\u00f3 nh\u00f3m'}
+            active={selectedGroupId === 'no-group'}
+            onClick={() => setSelectedGroupId('no-group')}
+          />
+        </div>
+
+        <div className="min-h-0 flex-1 space-y-1 overflow-y-auto">
+          {groups.map((group) => {
+            const isMenuOpen = openMenuId === group.id
+            return (
+              <GroupItem
+                key={group.id}
+                group={group}
+                isSelected={selectedGroupId === group.id}
+                isMenuOpen={isMenuOpen}
+                onSelect={() => setSelectedGroupId(group.id)}
+                onToggleMenu={(e) => {
+                  e.stopPropagation()
+                  setOpenMenuId(isMenuOpen ? null : group.id)
+                }}
+                onEdit={() => {
+                  setOpenMenuId(null)
+                  onEditGroup({ id: group.id, name: group.name })
+                }}
+                onDelete={() => {
+                  setOpenMenuId(null)
+                  onDeleteGroup({ id: group.id, name: group.name })
+                }}
+                onCloseMenu={() => setOpenMenuId(null)}
+              />
+            )
+          })}
+        </div>
       </div>
     </aside>
+  )
+}
+function GroupFilterItem({
+  label,
+  active,
+  onClick,
+}: {
+  label: string
+  active: boolean
+  onClick: () => void
+}) {
+  return (
+    <button
+      onClick={onClick}
+      className={`flex w-full items-center gap-2 rounded-lg px-3 py-2.5 text-left text-sm font-bold transition-all ${
+        active ? 'bg-[#243752] text-white' : 'text-[#D7DEE8] hover:bg-white/5 hover:text-white'
+      }`}
+    >
+      <FolderIcon className={active ? 'h-4 w-4 shrink-0 text-[#60A5FA]' : 'h-4 w-4 shrink-0 text-[#8EA0B5]'} />
+      <span className="min-w-0 flex-1 truncate">{label}</span>
+    </button>
+  )
+}
+
+function PlusCircleIcon({ className = '' }: { className?: string }) {
+  return (
+    <svg className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor">
+      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 5v14m7-7H5" />
+    </svg>
+  )
+}
+
+function ChevronLeftIcon({ className = '' }: { className?: string }) {
+  return (
+    <svg className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor">
+      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 6l-6 6 6 6" />
+    </svg>
+  )
+}
+
+function ChevronRightIcon({ className = '' }: { className?: string }) {
+  return (
+    <svg className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor">
+      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 6l6 6-6 6" />
+    </svg>
+  )
+}
+
+function FolderIcon({ className = '' }: { className?: string }) {
+  return (
+    <svg className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor">
+      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3.75 6.75h6l1.5 2h9v8.5a2 2 0 01-2 2H5.75a2 2 0 01-2-2V6.75z" />
+    </svg>
+  )
+}
+
+function MoreVerticalIcon({ className = '' }: { className?: string }) {
+  return (
+    <svg className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor">
+      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.4} d="M12 6.75h.01M12 12h.01M12 17.25h.01" />
+    </svg>
+  )
+}
+
+function EditIcon({ className = '' }: { className?: string }) {
+  return (
+    <svg className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor">
+      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16.86 4.49l2.65 2.65a1.67 1.67 0 010 2.36L10.1 18.91 5 20l1.09-5.1 9.41-9.41a1.67 1.67 0 012.36 0z" />
+      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M14.5 6.85l2.65 2.65" />
+    </svg>
+  )
+}
+
+function TrashIcon({ className = '' }: { className?: string }) {
+  return (
+    <svg className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor">
+      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 7V5.75A1.75 1.75 0 0110.75 4h2.5A1.75 1.75 0 0115 5.75V7m-8 0h10m-9 0l.8 11.2A2 2 0 0010.8 20h2.4a2 2 0 002-1.8L16 7" />
+    </svg>
+  )
+}
+
+function EmptyProfilesIcon({ className = '' }: { className?: string }) {
+  return (
+    <svg className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor">
+      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.8} d="M5 6.75A1.75 1.75 0 016.75 5h10.5A1.75 1.75 0 0119 6.75v10.5A1.75 1.75 0 0117.25 19H6.75A1.75 1.75 0 015 17.25V6.75z" />
+      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.8} d="M8 9.5h8M8 13h5" />
+    </svg>
   )
 }
 
@@ -996,18 +970,41 @@ function MoveGroupModal({
   )
 }
 
-function CompactStat({ label, value, tone = 'slate' }: { label: string; value: number; tone?: 'slate' | 'violet' | 'orange' | 'purple' }) {
+function CompactStat({ label, value, tone = 'slate' }: { label: string; value: number; tone?: 'slate' | 'green' | 'orange' | 'blue' }) {
   const toneClass = {
-    slate: 'text-white',
-    violet: 'text-purple-300',
-    orange: 'text-orange-300',
-    purple: 'text-purple-300'
+    slate: {
+      value: 'text-[#E5EDF7]',
+      label: 'text-[#8EA0B5]',
+      accent: 'bg-[#64748B]',
+      glow: 'shadow-[0_0_18px_rgba(100,116,139,0.16)]',
+    },
+    green: {
+      value: 'text-[#6EE7B7]',
+      label: 'text-[#8EA0B5]',
+      accent: 'bg-[#10B981]',
+      glow: 'shadow-[0_0_18px_rgba(16,185,129,0.18)]',
+    },
+    orange: {
+      value: 'text-[#FDBA74]',
+      label: 'text-[#8EA0B5]',
+      accent: 'bg-[#F59E0B]',
+      glow: 'shadow-[0_0_18px_rgba(245,158,11,0.18)]',
+    },
+    blue: {
+      value: 'text-[#93C5FD]',
+      label: 'text-[#8EA0B5]',
+      accent: 'bg-[#3B82F6]',
+      glow: 'shadow-[0_0_18px_rgba(59,130,246,0.18)]',
+    },
   }[tone]
 
   return (
-    <div className="rounded-xl border border-purple-500/10 bg-white/[0.04] backdrop-blur-md px-4 py-3">
-      <p className={`text-2xl font-semibold ${toneClass}`}>{value}</p>
-      <p className="mt-1 text-xs text-slate-400">{label}</p>
+    <div className="group flex h-[58px] items-center gap-3 rounded-lg border border-[#243044] bg-[#151E2A] px-3.5 transition-colors hover:border-[#334155] hover:bg-[#182332]">
+      <span className={`h-8 w-1 rounded-full ${toneClass.accent} ${toneClass.glow}`} />
+      <div className="min-w-0">
+        <p className={`text-[22px] font-bold leading-6 ${toneClass.value}`}>{value}</p>
+        <p className={`mt-0.5 text-[11px] font-semibold uppercase ${toneClass.label}`}>{label}</p>
+      </div>
     </div>
   )
 }

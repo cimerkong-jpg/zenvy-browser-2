@@ -1,355 +1,603 @@
-import { useState, useEffect } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
+import type { ReactNode } from 'react'
 import { useWorkspace } from '../store/useWorkspace'
 import { toast } from '../store/useToast'
-import type { Page } from '../App'
+import type { WorkspaceWithStats } from '../../../shared/workspace-types'
 
 type TabType = 'general' | 'info'
 
-interface WorkspaceSettingsPageProps {
-  onNavigate?: (page: Page) => void
-}
-
-export default function WorkspaceSettingsPage({ onNavigate }: WorkspaceSettingsPageProps) {
-  console.log('[WorkspaceSettingsPage] Component mounted/rendered')
-  const { currentWorkspace, currentRole, deleteWorkspace } = useWorkspace()
-  const [activeTab, setActiveTab] = useState<TabType>('general')
-  const [loading, setLoading] = useState(false)
-  
-  // General tab state
-  const [permissionMode, setPermissionMode] = useState<'group' | 'profile'>('group')
-  const [automationMode, setAutomationMode] = useState<'flowchart' | 'javascript'>('javascript')
-  
-  // Info tab state
-  const [workspaceName, setWorkspaceName] = useState('')
-  const [workspaceDescription, setWorkspaceDescription] = useState('')
-  
-  // Delete modal state
-  const [showDeleteModal, setShowDeleteModal] = useState(false)
-  const [deleteConfirmName, setDeleteConfirmName] = useState('')
-  
-  const [hasChanges, setHasChanges] = useState(false)
-
-  useEffect(() => {
-    if (currentWorkspace) {
-      setWorkspaceName(currentWorkspace.name)
-      setWorkspaceDescription(currentWorkspace.settings?.description || '')
-      setPermissionMode(currentWorkspace.settings?.permissionMode || 'group')
-      setAutomationMode(currentWorkspace.settings?.automationMode || 'javascript')
-    }
-  }, [currentWorkspace])
-
-  useEffect(() => {
-    if (!currentWorkspace) return
-    const changed = 
-      workspaceName !== currentWorkspace.name ||
-      workspaceDescription !== (currentWorkspace.settings?.description || '') ||
-      permissionMode !== (currentWorkspace.settings?.permissionMode || 'group') ||
-      automationMode !== (currentWorkspace.settings?.automationMode || 'javascript')
-    setHasChanges(changed)
-  }, [workspaceName, workspaceDescription, permissionMode, automationMode, currentWorkspace])
+export default function WorkspaceSettingsPage() {
+  const { currentWorkspace, currentRole, workspaces, updateWorkspace, deleteWorkspace } = useWorkspace()
+  const [activeTab, setActiveTab] = useState<TabType>('info')
 
   if (!currentWorkspace) {
     return (
-      <div className="flex items-center justify-center h-full">
-        <div className="text-slate-400">Không có workspace nào được chọn</div>
+      <div className="mkt-shell flex h-full items-center justify-center">
+        <p className="text-[#7C8796]">Không có workspace nào được chọn</p>
       </div>
     )
   }
 
   const isOwner = currentRole === 'owner'
-  const isDefault = currentWorkspace.isDefault || currentWorkspace.name === 'My Workspace'
-  const canDelete = isOwner && !isDefault
+  const defaultWorkspaceId =
+    workspaces.find((workspace) => workspace.isDefault === true)?.id ??
+    (currentWorkspace.isDefault === true ? currentWorkspace.id : null) ??
+    workspaces[0]?.id ??
+    null
 
-  const handleSaveGeneral = async () => {
-    if (!currentWorkspace) return
-    setLoading(true)
+  return (
+    <div className="mkt-shell h-full overflow-y-auto px-6 py-5">
+      <div className="mx-auto max-w-[1152px]">
+        <div className="mkt-panel flex min-h-[520px] overflow-hidden">
+          <aside className="w-[202px] shrink-0 border-r border-solid border-[#2C3746] px-4 py-6">
+            <nav className="space-y-2">
+              <button
+                onClick={() => setActiveTab('general')}
+                className={`flex h-10 w-full items-center gap-3 rounded-lg px-4 text-left text-sm font-bold transition-colors ${
+                  activeTab === 'general'
+                    ? 'bg-[#384452] text-white'
+                    : 'text-[#8EA0B5] hover:bg-white/5 hover:text-white'
+                }`}
+              >
+                <SlidersIcon className="h-4 w-4" />
+                Chung
+              </button>
+              <button
+                onClick={() => setActiveTab('info')}
+                className={`flex h-10 w-full items-center gap-3 rounded-lg px-4 text-left text-sm font-bold transition-colors ${
+                  activeTab === 'info'
+                    ? 'bg-[#384452] text-white'
+                    : 'text-[#8EA0B5] hover:bg-white/5 hover:text-white'
+                }`}
+              >
+                <InfoIcon className="h-4 w-4" />
+                Thông tin
+              </button>
+            </nav>
+          </aside>
+
+          <main className="flex-1 px-10 py-7">
+            {activeTab === 'general' && (
+              <GeneralTab
+                workspace={currentWorkspace}
+                defaultWorkspaceId={defaultWorkspaceId}
+                isOwner={isOwner}
+                onDelete={deleteWorkspace}
+              />
+            )}
+            {activeTab === 'info' && (
+              <InfoTab
+                workspace={currentWorkspace}
+                defaultWorkspaceId={defaultWorkspaceId}
+                isOwner={isOwner}
+                onUpdate={updateWorkspace}
+              />
+            )}
+          </main>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+function isDefaultWorkspace(workspace: Pick<WorkspaceWithStats, 'isDefault'>) {
+  return workspace.isDefault === true
+}
+
+function GeneralTab({
+  workspace,
+  defaultWorkspaceId,
+  isOwner,
+  onDelete
+}: {
+  workspace: WorkspaceWithStats
+  defaultWorkspaceId: string | null
+  isOwner: boolean
+  onDelete: (workspaceId: string) => Promise<any>
+}) {
+  const [permissionMode, setPermissionMode] = useState<'group' | 'profile'>(
+    workspace.settings?.permissionMode || 'profile'
+  )
+  const [automationMode, setAutomationMode] = useState<'flowchart' | 'javascript'>(
+    workspace.settings?.automationMode || 'javascript'
+  )
+  const [hasChanges, setHasChanges] = useState(false)
+  const [isSaving, setIsSaving] = useState(false)
+  const [isDeleting, setIsDeleting] = useState(false)
+  const [showDeleteModal, setShowDeleteModal] = useState(false)
+  const [deleteConfirmText, setDeleteConfirmText] = useState('')
+  const defaultWorkspace = useMemo(
+    () => isDefaultWorkspace(workspace) || workspace.id === defaultWorkspaceId,
+    [defaultWorkspaceId, workspace]
+  )
+
+  useEffect(() => {
+    const changed =
+      permissionMode !== (workspace.settings?.permissionMode || 'profile') ||
+      automationMode !== (workspace.settings?.automationMode || 'javascript')
+    setHasChanges(changed)
+  }, [permissionMode, automationMode, workspace.settings])
+
+  const handleSave = async () => {
+    if (!hasChanges) return
+    setIsSaving(true)
     try {
-      await window.api.workspaces.updateWorkspaceSettings(currentWorkspace.id, {
+      await window.api.workspaces.updateWorkspaceSettings(workspace.id, {
         permissionMode,
-        automationMode,
+        automationMode
       })
       toast.success('Đã lưu cài đặt')
       setHasChanges(false)
     } catch (error) {
-      toast.error(error instanceof Error ? error.message : 'Không thể lưu cài đặt')
+      toast.error('Lỗi lưu cài đặt: ' + (error as Error).message)
     } finally {
-      setLoading(false)
-    }
-  }
-
-  const handleSaveInfo = async () => {
-    if (!currentWorkspace) return
-    if (!workspaceName.trim()) {
-      toast.error('Tên workspace không được để trống')
-      return
-    }
-    setLoading(true)
-    try {
-      await window.api.workspaces.updateWorkspace(currentWorkspace.id, {
-        name: workspaceName.trim(),
-        description: workspaceDescription.trim(),
-      })
-      toast.success('Đã cập nhật thông tin')
-      setHasChanges(false)
-    } catch (error) {
-      toast.error(error instanceof Error ? error.message : 'Không thể cập nhật thông tin')
-    } finally {
-      setLoading(false)
+      setIsSaving(false)
     }
   }
 
   const handleDelete = async () => {
-    if (!currentWorkspace || deleteConfirmName !== currentWorkspace.name) return
-    setLoading(true)
+    if (!isOwner) {
+      toast.error('Chỉ owner mới có thể xóa workspace')
+      return
+    }
+
+    if (defaultWorkspace) {
+      toast.error('Không thể xóa workspace mặc định')
+      return
+    }
+
+    if (deleteConfirmText !== workspace.name) {
+      toast.error('Tên workspace không khớp')
+      return
+    }
+
+    setIsDeleting(true)
     try {
-      await deleteWorkspace(currentWorkspace.id)
+      await onDelete(workspace.id)
       toast.success('Đã xóa workspace')
       setShowDeleteModal(false)
-      if (onNavigate) onNavigate('profiles')
     } catch (error) {
-      toast.error(error instanceof Error ? error.message : 'Không thể xóa workspace')
+      toast.error('Lỗi xóa workspace: ' + (error as Error).message)
     } finally {
-      setLoading(false)
+      setIsDeleting(false)
     }
   }
 
   return (
-    <div className="flex flex-col h-full overflow-hidden">
-      {/* Header */}
-      <header className="flex-shrink-0 border-b border-purple-500/10 bg-[#0D0B1A]/80 px-4 py-3">
-        <h1 className="text-lg font-semibold text-white">Cài Đặt Workspace</h1>
-        <p className="text-xs text-slate-400 mt-1">
-          {currentWorkspace.name}
-          {isDefault && <span className="ml-2 text-amber-400">• Mặc định</span>}
-        </p>
-      </header>
+    <div className="max-w-[720px] space-y-8">
+      <SettingSection title="Phương pháp phân quyền">
+        <ChoiceCard
+          selected={permissionMode === 'group'}
+          disabled={!isOwner}
+          title="Chia theo nhóm"
+          description="Phân quyền theo nhóm người dùng trong workspace."
+          icon={<UsersIcon className="h-5 w-5" />}
+          onClick={() => setPermissionMode('group')}
+        />
+        <ChoiceCard
+          selected={permissionMode === 'profile'}
+          disabled={!isOwner}
+          title="Chia theo hồ sơ"
+          description="Phân quyền theo từng hồ sơ riêng lẻ."
+          icon={<UserIcon className="h-5 w-5" />}
+          onClick={() => setPermissionMode('profile')}
+        />
+      </SettingSection>
 
-      {/* Content */}
-      <div className="flex-1 overflow-y-auto px-4 py-6">
-        <div className="max-w-4xl mx-auto">
-          {/* Card with sidebar */}
-          <div className="bg-surface/50 border border-purple-500/10 backdrop-blur-md rounded-xl overflow-hidden flex">
-            {/* Sidebar */}
-            <div className="w-48 border-r border-purple-500/10 bg-black/20 p-4">
-              <nav className="space-y-1">
-                <button
-                  onClick={() => setActiveTab('general')}
-                  className={`w-full text-left px-3 py-2 rounded-lg text-sm transition-colors ${
-                    activeTab === 'general'
-                      ? 'bg-purple-500/20 text-white'
-                      : 'text-slate-400 hover:text-white hover:bg-white/5'
-                  }`}
-                >
-                  ⚙️ Chung
-                </button>
-                <button
-                  onClick={() => setActiveTab('info')}
-                  className={`w-full text-left px-3 py-2 rounded-lg text-sm transition-colors ${
-                    activeTab === 'info'
-                      ? 'bg-purple-500/20 text-white'
-                      : 'text-slate-400 hover:text-white hover:bg-white/5'
-                  }`}
-                >
-                  ℹ️ Thông tin
-                </button>
-              </nav>
-            </div>
+      <SettingSection title="Chế độ tạo quy trình">
+        <ChoiceCard
+          selected={automationMode === 'flowchart'}
+          disabled={!isOwner}
+          title="Sơ đồ"
+          description="Tạo quy trình bằng sơ đồ trực quan."
+          icon={<FlowIcon className="h-5 w-5" />}
+          onClick={() => setAutomationMode('flowchart')}
+        />
+        <ChoiceCard
+          selected={automationMode === 'javascript'}
+          disabled={!isOwner}
+          title="Mã Javascript"
+          description="Viết code Javascript trực tiếp."
+          icon={<CodeIcon className="h-5 w-5" />}
+          onClick={() => setAutomationMode('javascript')}
+        />
+      </SettingSection>
 
-            {/* Content area */}
-            <div className="flex-1 p-6">
-              {activeTab === 'general' && (
-                <div className="space-y-6">
-                  {/* Permission Mode */}
-                  <section>
-                    <h3 className="text-sm font-medium text-white mb-3">Phương pháp phân quyền</h3>
-                    <div className="space-y-2">
-                      <label className="flex items-start gap-3 cursor-pointer group">
-                        <input
-                          type="radio"
-                          checked={permissionMode === 'group'}
-                          onChange={() => setPermissionMode('group')}
-                          className="mt-0.5 w-4 h-4 text-purple-500 border-purple-500/30 bg-white/5 focus:ring-1 focus:ring-purple-400/20"
-                        />
-                        <div>
-                          <div className="text-sm text-white group-hover:text-purple-300 transition-colors">Chia theo nhóm</div>
-                          <div className="text-xs text-slate-500">Cấp cho người dùng quyền truy cập vào các nhóm hồ sơ cụ thể</div>
-                        </div>
-                      </label>
-                      <label className="flex items-start gap-3 cursor-pointer group">
-                        <input
-                          type="radio"
-                          checked={permissionMode === 'profile'}
-                          onChange={() => setPermissionMode('profile')}
-                          className="mt-0.5 w-4 h-4 text-purple-500 border-purple-500/30 bg-white/5 focus:ring-1 focus:ring-purple-400/20"
-                        />
-                        <div>
-                          <div className="text-sm text-white group-hover:text-purple-300 transition-colors">Chia theo hồ sơ</div>
-                          <div className="text-xs text-slate-500">Cấp cho người dùng quyền truy cập vào hồ sơ cụ thể</div>
-                        </div>
-                      </label>
-                    </div>
-                  </section>
-
-                  {/* Automation Mode */}
-                  <section>
-                    <h3 className="text-sm font-medium text-white mb-3">Chế độ tạo quy trình</h3>
-                    <div className="space-y-2">
-                      <label className="flex items-start gap-3 cursor-pointer group">
-                        <input
-                          type="radio"
-                          checked={automationMode === 'flowchart'}
-                          onChange={() => setAutomationMode('flowchart')}
-                          className="mt-0.5 w-4 h-4 text-purple-500 border-purple-500/30 bg-white/5 focus:ring-1 focus:ring-purple-400/20"
-                        />
-                        <div>
-                          <div className="text-sm text-white group-hover:text-purple-300 transition-colors">Sơ đồ</div>
-                          <div className="text-xs text-slate-500">Sử dụng giao diện kéo thả của Flowchart</div>
-                        </div>
-                      </label>
-                      <label className="flex items-start gap-3 cursor-pointer group">
-                        <input
-                          type="radio"
-                          checked={automationMode === 'javascript'}
-                          onChange={() => setAutomationMode('javascript')}
-                          className="mt-0.5 w-4 h-4 text-purple-500 border-purple-500/30 bg-white/5 focus:ring-1 focus:ring-purple-400/20"
-                        />
-                        <div>
-                          <div className="text-sm text-white group-hover:text-purple-300 transition-colors">Mã Javascript</div>
-                          <div className="text-xs text-slate-500">Sử dụng các lệnh lập trình ngôn ngữ Javascript</div>
-                        </div>
-                      </label>
-                    </div>
-                  </section>
-
-                  {/* Delete Section */}
-                  <section className="pt-4 border-t border-purple-500/10">
-                    <h3 className="text-sm font-medium text-white mb-3">Xóa không gian làm việc</h3>
-                    {isDefault ? (
-                      <div className="text-sm text-slate-400 mb-3">
-                        My Workspace là không gian làm việc mặc định và không thể xóa.
-                      </div>
-                    ) : !isOwner ? (
-                      <div className="text-sm text-slate-400 mb-3">
-                        Chỉ owner mới có thể xóa workspace.
-                      </div>
-                    ) : (
-                      <div className="text-sm text-slate-400 mb-3">
-                        Sau khi xóa, không gian làm việc sẽ biến mất vĩnh viễn cùng với dữ liệu của nó.
-                      </div>
-                    )}
-                    <button
-                      onClick={() => setShowDeleteModal(true)}
-                      disabled={!canDelete}
-                      className="px-4 py-2 rounded-lg bg-red-500/10 text-red-400 text-sm font-medium hover:bg-red-500/20 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-                    >
-                      Xóa không gian làm việc
-                    </button>
-                  </section>
-
-                  {/* Save Button */}
-                  <div className="flex justify-end pt-4">
-                    <button
-                      onClick={handleSaveGeneral}
-                      disabled={loading || !hasChanges}
-                      className="px-4 py-2 rounded-lg bg-gradient-to-r from-violet-600 to-purple-600 text-white text-sm font-medium hover:shadow-[0_0_20px_rgba(139,92,246,0.4)] transition-all disabled:opacity-50 disabled:cursor-not-allowed"
-                    >
-                      {loading ? 'Đang lưu...' : 'Lưu thay đổi'}
-                    </button>
-                  </div>
-                </div>
-              )}
-
-              {activeTab === 'info' && (
-                <div className="space-y-6">
-                  <section>
-                    <h3 className="text-sm font-medium text-white mb-4">Tên không gian làm việc</h3>
-                    <div className="flex items-center gap-2 mb-2">
-                      {isDefault && <span className="text-amber-400">🔑</span>}
-                      <input
-                        type="text"
-                        value={workspaceName}
-                        onChange={(e) => setWorkspaceName(e.target.value)}
-                        disabled={isDefault || !isOwner}
-                        className="flex-1 rounded-lg border border-purple-500/10 bg-white/5 px-3 py-2 text-sm text-white placeholder-slate-500 focus:border-purple-500/30 focus:outline-none transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-                        placeholder="Tên workspace"
-                      />
-                    </div>
-                    {isDefault && (
-                      <p className="text-xs text-slate-500">
-                        Không gian làm việc mặc định được đánh dấu bởi 🔑
-                      </p>
-                    )}
-                  </section>
-
-                  <section>
-                    <h3 className="text-sm font-medium text-white mb-4">Mô tả không gian làm việc</h3>
-                    <textarea
-                      value={workspaceDescription}
-                      onChange={(e) => setWorkspaceDescription(e.target.value)}
-                      disabled={!isOwner}
-                      rows={4}
-                      className="w-full rounded-lg border border-purple-500/10 bg-white/5 px-3 py-2 text-sm text-white placeholder-slate-500 focus:border-purple-500/30 focus:outline-none transition-colors resize-none disabled:opacity-50 disabled:cursor-not-allowed"
-                      placeholder="Mô tả về workspace này..."
-                    />
-                  </section>
-
-                  {/* Save Button */}
-                  <div className="flex justify-end pt-4">
-                    <button
-                      onClick={handleSaveInfo}
-                      disabled={loading || !hasChanges || !isOwner}
-                      className="px-4 py-2 rounded-lg bg-gradient-to-r from-violet-600 to-purple-600 text-white text-sm font-medium hover:shadow-[0_0_20px_rgba(139,92,246,0.4)] transition-all disabled:opacity-50 disabled:cursor-not-allowed"
-                    >
-                      {loading ? 'Đang lưu...' : 'Lưu thay đổi'}
-                    </button>
-                  </div>
-                </div>
-              )}
-            </div>
-          </div>
-        </div>
-      </div>
-
-      {/* Delete Confirmation Modal */}
-      {showDeleteModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm">
-          <div className="w-[440px] rounded-xl border border-white/10 bg-[#111218] p-6 shadow-2xl">
-            <h3 className="text-lg font-semibold text-white mb-2">Xóa không gian làm việc?</h3>
-            <p className="text-sm text-slate-400 mb-4">
-              Để xác nhận xóa, hãy gõ <span className="text-white font-medium">'{currentWorkspace.name}'</span> vào ô bên dưới
+      {defaultWorkspace && (
+        <div className="mkt-panel-soft flex items-start gap-3 p-4">
+          <DefaultWorkspaceIcon className="mt-0.5 h-5 w-5 shrink-0 text-[#F6B600]" />
+          <div>
+            <p className="text-sm font-bold text-white">Workspace mặc định</p>
+            <p className="mt-1 text-xs font-medium text-[#8EA0B5]">
+              My Workspace là không gian mặc định của bạn và không thể xóa.
             </p>
-            <p className="text-xs text-slate-500 mb-4">
-              Lưu ý: Khi xóa không gian làm việc, tất cả hồ sơ được lưu trữ trong không gian làm việc sẽ bị xóa và không thể khôi phục.
-            </p>
-            <input
-              type="text"
-              value={deleteConfirmName}
-              onChange={(e) => setDeleteConfirmName(e.target.value)}
-              placeholder="Nhập tên không gian làm việc để xác nhận"
-              className="w-full rounded-lg border border-purple-500/10 bg-white/5 px-3 py-2 text-sm text-white placeholder-slate-500 focus:border-purple-500/30 focus:outline-none transition-colors mb-6"
-            />
-            <div className="flex justify-end gap-3">
-              <button
-                onClick={() => {
-                  setShowDeleteModal(false)
-                  setDeleteConfirmName('')
-                }}
-                disabled={loading}
-                className="px-4 py-2 rounded-lg border border-white/10 text-sm text-slate-300 hover:bg-white/5 transition-colors"
-              >
-                Đóng
-              </button>
-              <button
-                onClick={handleDelete}
-                disabled={loading || deleteConfirmName !== currentWorkspace.name}
-                className="px-4 py-2 rounded-lg bg-red-500 text-white text-sm font-medium hover:bg-red-600 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-              >
-                {loading ? 'Đang xóa...' : 'Xóa không gian làm việc'}
-              </button>
-            </div>
           </div>
         </div>
       )}
+
+      {isOwner && !defaultWorkspace && (
+        <section className="border-t border-dashed border-[#2C3746] pt-6">
+          <h3 className="text-sm font-bold text-red-300">Xóa không gian làm việc</h3>
+          <p className="mt-2 text-xs font-medium text-[#8EA0B5]">
+            Hành động này không thể hoàn tác. Tất cả dữ liệu trong workspace sẽ bị xóa vĩnh viễn.
+          </p>
+          <button
+            onClick={() => setShowDeleteModal(true)}
+            className="mt-4 flex h-9 items-center gap-2 rounded-md border border-red-500/30 bg-red-500/10 px-4 text-sm font-bold text-red-300 hover:bg-red-500/20"
+          >
+            <TrashIcon className="h-4 w-4" />
+            Xóa workspace
+          </button>
+        </section>
+      )}
+
+      <button
+        onClick={handleSave}
+        disabled={!hasChanges || isSaving || !isOwner}
+        className="h-9 rounded-md bg-[#384452] px-4 text-sm font-bold text-[#9AA7B7] transition-colors enabled:bg-[#2563EB] enabled:text-white enabled:hover:bg-[#3478F6] disabled:cursor-not-allowed"
+      >
+        {isSaving ? 'Đang lưu...' : 'Lưu thay đổi'}
+      </button>
+
+      {showDeleteModal && (
+        <DeleteWorkspaceModal
+          workspaceName={workspace.name}
+          value={deleteConfirmText}
+          isDeleting={isDeleting}
+          onChange={setDeleteConfirmText}
+          onCancel={() => {
+            setShowDeleteModal(false)
+            setDeleteConfirmText('')
+          }}
+          onDelete={handleDelete}
+        />
+      )}
     </div>
+  )
+}
+
+function InfoTab({
+  workspace,
+  defaultWorkspaceId,
+  isOwner,
+  onUpdate
+}: {
+  workspace: WorkspaceWithStats
+  defaultWorkspaceId: string | null
+  isOwner: boolean
+  onUpdate: (workspaceId: string, updates: { name?: string; settings?: any }) => Promise<void>
+}) {
+  const [name, setName] = useState(workspace.name || '')
+  const [description, setDescription] = useState(workspace.settings?.description || '')
+  const [hasChanges, setHasChanges] = useState(false)
+  const [isSaving, setIsSaving] = useState(false)
+  const [editingName, setEditingName] = useState(false)
+  const [editingDescription, setEditingDescription] = useState(false)
+  const nameInputRef = useRef<HTMLInputElement>(null)
+  const descriptionRef = useRef<HTMLTextAreaElement>(null)
+  const defaultWorkspace = useMemo(
+    () => isDefaultWorkspace(workspace) || workspace.id === defaultWorkspaceId,
+    [defaultWorkspaceId, workspace]
+  )
+
+  useEffect(() => {
+    const changed =
+      name !== (workspace.name || '') ||
+      description !== (workspace.settings?.description || '')
+    setHasChanges(changed)
+  }, [name, description, workspace.name, workspace.settings])
+
+  const handleSave = async () => {
+    if (!hasChanges || !isOwner) return
+
+    if (!name.trim()) {
+      toast.error('Tên workspace không được để trống')
+      return
+    }
+
+    setIsSaving(true)
+    try {
+      await onUpdate(workspace.id, {
+        name: name.trim(),
+        settings: {
+          ...workspace.settings,
+          description: description.trim()
+        }
+      })
+      toast.success('Đã lưu thông tin workspace')
+      setEditingName(false)
+      setEditingDescription(false)
+      setHasChanges(false)
+    } catch (error) {
+      toast.error('Lỗi lưu thông tin: ' + (error as Error).message)
+    } finally {
+      setIsSaving(false)
+    }
+  }
+
+  return (
+    <div className="relative flex min-h-[460px] max-w-[720px] flex-col">
+      <section>
+        <h2 className="text-[20px] font-extrabold leading-tight text-white">
+          Tên không gian làm việc
+        </h2>
+        <p className="mt-2 flex items-center gap-1.5 text-sm font-medium text-[#8EA0B5]">
+          Không gian làm việc mặc định được đánh dấu bởi
+          <DefaultWorkspaceIcon className="h-4 w-4 text-[#F6B600]" />
+        </p>
+
+        <div className="mt-5 flex items-center gap-3">
+          {defaultWorkspace && <DefaultWorkspaceIcon className="h-5 w-5 shrink-0 text-[#F6B600]" />}
+          <input
+            ref={nameInputRef}
+            type="text"
+            value={name}
+            onChange={(event) => setName(event.target.value)}
+            disabled={!isOwner}
+            readOnly={!editingName}
+            className="h-8 min-w-[160px] max-w-[420px] rounded-md border border-transparent bg-transparent px-0 text-[16px] font-bold text-[#1677FF] outline-none transition-colors placeholder:text-[#64748B] enabled:focus:border-[#2F3B4B] enabled:focus:bg-[#121922] enabled:focus:px-3 disabled:cursor-not-allowed"
+            placeholder="Tên workspace"
+          />
+          {isOwner && (
+            <button
+              type="button"
+              onClick={() => {
+                setEditingName(true)
+                window.requestAnimationFrame(() => {
+                  nameInputRef.current?.focus()
+                  nameInputRef.current?.select()
+                })
+              }}
+              className="flex h-8 w-8 shrink-0 items-center justify-center rounded-md text-[#8EA0B5] transition-colors hover:bg-white/5 hover:text-white"
+              title="Sửa tên workspace"
+            >
+              <EditIcon className="h-[18px] w-[18px]" />
+            </button>
+          )}
+        </div>
+      </section>
+
+      <section className="mt-8">
+        <h2 className="text-[20px] font-extrabold leading-tight text-white">
+          Mô tả không gian làm việc
+        </h2>
+        <div className="mt-5 flex items-start gap-3">
+          {isOwner && (
+            <button
+              type="button"
+              onClick={() => {
+                setEditingDescription(true)
+                window.requestAnimationFrame(() => descriptionRef.current?.focus())
+              }}
+              className="mt-1 flex h-8 w-8 shrink-0 items-center justify-center rounded-md text-[#8EA0B5] transition-colors hover:bg-white/5 hover:text-white"
+              title="Sửa mô tả workspace"
+            >
+              <EditIcon className="h-[18px] w-[18px]" />
+            </button>
+          )}
+          <textarea
+            ref={descriptionRef}
+            value={description}
+            onChange={(event) => setDescription(event.target.value)}
+            disabled={!isOwner}
+            readOnly={!editingDescription}
+            rows={4}
+            className="mkt-input min-h-[104px] w-full max-w-[560px] resize-none px-3 py-2 text-sm font-medium placeholder:text-[#64748B] disabled:cursor-not-allowed disabled:opacity-60"
+            placeholder="Nhập mô tả workspace"
+          />
+        </div>
+      </section>
+
+      {!isOwner && (
+        <div className="mkt-panel-soft mt-8 flex items-start gap-3 p-4">
+          <InfoIcon className="mt-0.5 h-5 w-5 shrink-0 text-[#F59E0B]" />
+          <div>
+            <p className="text-sm font-bold text-white">Chỉ xem</p>
+            <p className="mt-1 text-xs font-medium text-[#8EA0B5]">
+              Chỉ owner mới có thể chỉnh sửa thông tin workspace.
+            </p>
+          </div>
+        </div>
+      )}
+
+      <button
+        onClick={handleSave}
+        disabled={!hasChanges || isSaving || !isOwner}
+        className="mt-auto h-9 w-fit rounded-md bg-[#384452] px-4 text-sm font-bold text-[#9AA7B7] transition-colors enabled:bg-[#2563EB] enabled:text-white enabled:hover:bg-[#3478F6] disabled:cursor-not-allowed"
+      >
+        {isSaving ? 'Đang lưu...' : 'Lưu thay đổi'}
+      </button>
+    </div>
+  )
+}
+
+function SettingSection({ title, children }: { title: string; children: ReactNode }) {
+  return (
+    <section>
+      <h3 className="mb-3 text-[18px] font-extrabold text-white">{title}</h3>
+      <div className="grid gap-3">{children}</div>
+    </section>
+  )
+}
+
+function ChoiceCard({
+  selected,
+  disabled,
+  title,
+  description,
+  icon,
+  onClick
+}: {
+  selected: boolean
+  disabled: boolean
+  title: string
+  description: string
+  icon: ReactNode
+  onClick: () => void
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      disabled={disabled}
+      className={`mkt-panel-soft flex items-center gap-3 p-4 text-left transition-colors ${
+        selected ? 'border-solid border-[#2F80ED] bg-[#10233D]' : 'hover:bg-[#202B38]'
+      } disabled:cursor-not-allowed disabled:opacity-60`}
+    >
+      <span className={selected ? 'text-[#60A5FA]' : 'text-[#8EA0B5]'}>{icon}</span>
+      <span className="min-w-0 flex-1">
+        <span className="block text-sm font-bold text-white">{title}</span>
+        <span className="mt-1 block text-xs font-medium text-[#8EA0B5]">{description}</span>
+      </span>
+      <span className={`h-4 w-4 rounded-full border ${selected ? 'border-[#60A5FA] bg-[#60A5FA]' : 'border-[#627086]'}`} />
+    </button>
+  )
+}
+
+function DeleteWorkspaceModal({
+  workspaceName,
+  value,
+  isDeleting,
+  onChange,
+  onCancel,
+  onDelete
+}: {
+  workspaceName: string
+  value: string
+  isDeleting: boolean
+  onChange: (value: string) => void
+  onCancel: () => void
+  onDelete: () => void
+}) {
+  return (
+    <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/60 backdrop-blur-sm">
+      <div className="mkt-panel w-[480px] p-6 shadow-2xl shadow-black/50">
+        <div className="mb-5 flex items-start gap-4">
+          <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-full bg-red-500/10">
+            <WarningIcon className="h-6 w-6 text-red-300" />
+          </div>
+          <div className="flex-1">
+            <h3 className="text-lg font-bold text-red-300">Xóa workspace</h3>
+            <p className="mt-2 text-sm font-medium text-[#8EA0B5]">
+              Hành động này không thể hoàn tác. Tất cả dữ liệu trong workspace <span className="font-bold text-white">"{workspaceName}"</span> sẽ bị xóa vĩnh viễn.
+            </p>
+          </div>
+        </div>
+
+        <label className="mb-5 block">
+          <span className="mb-2 block text-sm font-bold text-white">
+            Nhập tên workspace để xác nhận: <span className="text-red-300">"{workspaceName}"</span>
+          </span>
+          <input
+            type="text"
+            value={value}
+            onChange={(event) => onChange(event.target.value)}
+            placeholder="Nhập tên workspace"
+            className="mkt-input h-10 w-full px-3 text-sm"
+            autoFocus
+          />
+        </label>
+
+        <div className="flex justify-end gap-3">
+          <button
+            onClick={onCancel}
+            disabled={isDeleting}
+            className="h-9 rounded-md border border-[#344153] px-4 text-sm font-bold text-[#D7DEE8] hover:bg-white/5 disabled:opacity-50"
+          >
+            Hủy
+          </button>
+          <button
+            onClick={onDelete}
+            disabled={isDeleting || value !== workspaceName}
+            className="flex h-9 items-center gap-2 rounded-md bg-red-500 px-4 text-sm font-bold text-white hover:bg-red-600 disabled:cursor-not-allowed disabled:opacity-50"
+          >
+            {isDeleting ? 'Đang xóa...' : 'Xóa vĩnh viễn'}
+          </button>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+function DefaultWorkspaceIcon({ className = '' }: { className?: string }) {
+  return (
+    <svg className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor">
+      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7.75 10V8.25a4.25 4.25 0 018.5 0V10" />
+      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6.75 10h10.5A1.75 1.75 0 0119 11.75v6.5A1.75 1.75 0 0117.25 20H6.75A1.75 1.75 0 015 18.25v-6.5A1.75 1.75 0 016.75 10z" />
+      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 14v2" />
+    </svg>
+  )
+}
+
+function EditIcon({ className = '' }: { className?: string }) {
+  return (
+    <svg className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor">
+      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16.86 4.49l2.65 2.65a1.67 1.67 0 010 2.36L10.1 18.91 5 20l1.09-5.1 9.41-9.41a1.67 1.67 0 012.36 0z" />
+      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M14.5 6.85l2.65 2.65" />
+    </svg>
+  )
+}
+
+function InfoIcon({ className = '' }: { className?: string }) {
+  return (
+    <svg className={className} fill="currentColor" viewBox="0 0 20 20">
+      <path fillRule="evenodd" d="M18 10A8 8 0 112 10a8 8 0 0116 0zm-7-4a1 1 0 11-2 0 1 1 0 012 0zM9 9a1 1 0 000 2v3a1 1 0 001 1h1a1 1 0 100-2v-3a1 1 0 00-1-1H9z" clipRule="evenodd" />
+    </svg>
+  )
+}
+
+function SlidersIcon({ className = '' }: { className?: string }) {
+  return (
+    <svg className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor">
+      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 7h7m4 0h5M9 7a2 2 0 104 0 2 2 0 00-4 0zm-5 10h5m4 0h7m-9 0a2 2 0 104 0 2 2 0 00-4 0z" />
+    </svg>
+  )
+}
+
+function UsersIcon({ className = '' }: { className?: string }) {
+  return (
+    <svg className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor">
+      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 20h5v-2a4 4 0 00-4-4h-1M9 20H2v-2a4 4 0 014-4h3m6-4a4 4 0 10-8 0 4 4 0 008 0zm6 1a3 3 0 10-6 0 3 3 0 006 0z" />
+    </svg>
+  )
+}
+
+function UserIcon({ className = '' }: { className?: string }) {
+  return (
+    <svg className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor">
+      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
+    </svg>
+  )
+}
+
+function FlowIcon({ className = '' }: { className?: string }) {
+  return (
+    <svg className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor">
+      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 4h6v6H6V4zm6 10h6v6h-6v-6zM9 10v3a3 3 0 003 3h0" />
+    </svg>
+  )
+}
+
+function CodeIcon({ className = '' }: { className?: string }) {
+  return (
+    <svg className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor">
+      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 20l4-16m4 4l4 4-4 4M6 16l-4-4 4-4" />
+    </svg>
+  )
+}
+
+function TrashIcon({ className = '' }: { className?: string }) {
+  return (
+    <svg className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor">
+      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6M9 7V4h6v3m-9 0h12" />
+    </svg>
+  )
+}
+
+function WarningIcon({ className = '' }: { className?: string }) {
+  return (
+    <svg className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor">
+      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v3m0 4h.01M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z" />
+    </svg>
   )
 }

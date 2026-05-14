@@ -136,6 +136,8 @@ const api = {
     switchWorkspace: (workspaceId: string | null): Promise<{ success: true; workspaceId: string | null }> =>
       ipcRenderer.invoke('workspaces:switchWorkspace', workspaceId),
     createWorkspace: (input: CreateWorkspaceInput): Promise<Workspace> => ipcRenderer.invoke('workspaces:createWorkspace', input),
+    updateWorkspace: (workspaceId: string, updates: { name?: string; settings?: any }): Promise<Workspace> =>
+      ipcRenderer.invoke('workspaces:updateWorkspace', workspaceId, updates),
     acceptInvitations: (): Promise<string | null> => ipcRenderer.invoke('workspaces:acceptInvitations'),
     getMembers: (workspaceId: string): Promise<WorkspaceMember[]> => ipcRenderer.invoke('workspaces:getMembers', workspaceId),
     getInvitations: (workspaceId: string): Promise<WorkspaceInvitation[]> => ipcRenderer.invoke('workspaces:getInvitations', workspaceId),
@@ -156,7 +158,6 @@ const api = {
     deleteUserGroup: (id: string): Promise<void> => ipcRenderer.invoke('workspaces:deleteUserGroup', id),
     ensureDefaultWorkspace: (): Promise<WorkspaceWithStats> => ipcRenderer.invoke('workspaces:ensureDefaultWorkspace'),
     deleteWorkspace: (workspaceId: string): Promise<{ success: true; switchedToWorkspaceId: string | null }> => ipcRenderer.invoke('workspaces:deleteWorkspace', workspaceId),
-    updateWorkspace: (workspaceId: string, updates: { name?: string; description?: string }): Promise<void> => ipcRenderer.invoke('workspaces:updateWorkspace', workspaceId, updates),
     updateWorkspaceSettings: (workspaceId: string, settings: { permissionMode?: 'group' | 'profile'; automationMode?: 'flowchart' | 'javascript' }): Promise<void> => ipcRenderer.invoke('workspaces:updateWorkspaceSettings', workspaceId, settings)
   }
 }

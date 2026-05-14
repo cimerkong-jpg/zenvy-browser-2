@@ -1,5 +1,14 @@
 # Progress - Zenvy Browser
 
+## Current Status (2026-05-13)
+- Phase 0/1 dang uu tien: on dinh repo, workspace switching, member invite, user groups, va RLS Supabase.
+- `npm.cmd run typecheck` pass tren Windows.
+- `npm test` da duoc chuan hoa ve typecheck de khong tro toi file test khong ton tai.
+- Canonical workspace RLS migration: `WORKSPACE-RLS-CANONICAL.sql`.
+- User experience QA guide: `USER-EXPERIENCE-QA.md`.
+- Older one-off fix/report files archived under `docs/archive/phase-0-1-cleanup/`.
+- Chua san sang release: can chay build, ap dung migration tren Supabase, va manual QA workspace/member/user-group flow.
+
 ## Current Status (2026-05-06)
 - v1.0.0 — Release Readiness hoàn thành.
 - **Auth System hoàn thành** — Supabase auth + session persistence + UI đầy đủ.

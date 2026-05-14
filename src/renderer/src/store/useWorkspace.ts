@@ -80,6 +80,7 @@ interface WorkspaceState {
   loadInvitations: () => Promise<void>
   loadUserGroups: () => Promise<void>
   createWorkspace: (name: string, description?: string) => Promise<Workspace>
+  updateWorkspace: (workspaceId: string, updates: { name?: string; settings?: any }) => Promise<void>
   deleteWorkspace: (workspaceId: string) => Promise<void>
   ensureDefaultWorkspace: () => Promise<WorkspaceWithStats>
   inviteMember: (input: Omit<InviteMemberInput, 'workspaceId'>) => Promise<void>
@@ -284,6 +285,24 @@ export const useWorkspace = create<WorkspaceState>()(
         }
       },
 
+      updateWorkspace: async (workspaceId, updates) => {
+        try {
+          const api = getWorkspaceApi()
+          if (!api?.updateWorkspace) throw reportMissingWorkspaceApi('updateWorkspace')
+          await api.updateWorkspace(workspaceId, updates)
+
+          // Refresh workspace list to get updated data
+          await get().loadWorkspaces()
+
+          toast.success('Workspace updated successfully')
+        } catch (error) {
+          const normalized = readableError(error, 'Failed to update workspace')
+          set({ error: normalized.message })
+          toast.error(normalized.message)
+          throw normalized
+        }
+      },
+
       deleteWorkspace: async (workspaceId) => {
         try {
           const api = getWorkspaceApi()
@@ -325,16 +344,11 @@ export const useWorkspace = create<WorkspaceState>()(
       },
 
       inviteMember: async (input) => {
-        console.log('[useWorkspace] inviteMember called with:', input)
         const workspaceId = get().currentWorkspaceId
-        console.log('[useWorkspace] currentWorkspaceId:', workspaceId)
         if (!workspaceId) throw new Error('No workspace selected')
         const api = getWorkspaceApi()
-        console.log('[useWorkspace] api.inviteMember exists:', !!api?.inviteMember)
         if (!api?.inviteMember) throw reportMissingWorkspaceApi('inviteMember')
-        console.log('[useWorkspace] Calling api.inviteMember with:', { ...input, workspaceId })
         await api.inviteMember({ ...input, workspaceId })
-        console.log('[useWorkspace] api.inviteMember succeeded, loading invitations')
         await get().loadInvitations()
       },
 

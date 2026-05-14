@@ -53,6 +53,7 @@ export interface Fingerprint {
 
 export interface Profile {
   id: string
+  displayId?: string
   workspaceId?: string | null
   name: string
   groupId: string | null
@@ -115,6 +116,7 @@ export interface StoreSchema {
   profiles: Profile[]
   groups: Group[]
   scripts: AutomationScript[]
+  nextProfileDisplayId?: number
 }
 
 export type ScheduleType = 'once' | 'interval'

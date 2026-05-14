@@ -15,9 +15,10 @@ import type {
   WorkspaceUserGroup,
   WorkspaceWithStats,
 } from '../shared/workspace-types'
-import { DefaultRolePermissionMap } from '../shared/workspace-types'
+import { DefaultRolePermissionMap, PermissionKeys } from '../shared/workspace-types'
 
 let currentWorkspaceId: string | null = null
+const groupDescriptionMetaPrefix = '__ZENVY_GROUP_META__:'
 
 export type SwitchWorkspaceResult = {
   success: true
@@ -32,6 +33,20 @@ function toMs(value: string | null | undefined): number {
 
 function token(): string {
   return randomBytes(24).toString('hex')
+}
+
+function emptyPermissionMap(): RolePermissionMap {
+  return Object.fromEntries(PermissionKeys.map((key) => [key, false])) as RolePermissionMap
+}
+
+function parseGroupPermissions(description: string | null | undefined): RolePermissionMap | null {
+  if (!description?.startsWith(groupDescriptionMetaPrefix)) return null
+  try {
+    const parsed = JSON.parse(description.slice(groupDescriptionMetaPrefix.length)) as { permissions?: Partial<RolePermissionMap> }
+    return { ...emptyPermissionMap(), ...(parsed.permissions ?? {}) }
+  } catch {
+    return null
+  }
 }
 
 function delay(ms: number): Promise<void> {
@@ -150,7 +165,6 @@ export function getCurrentWorkspaceId(): string | null {
 }
 
 export async function setCurrentWorkspace(workspaceId: string | null): Promise<SwitchWorkspaceResult> {
-  console.log('[Workspace:switchWorkspace] Input workspaceId:', workspaceId)
   if (workspaceId !== null && typeof workspaceId !== 'string') {
     throw new Error('switchWorkspace expects workspaceId string')
   }
@@ -159,17 +173,12 @@ export async function setCurrentWorkspace(workspaceId: string | null): Promise<S
   if (workspaceId) {
     requireConfigured()
     user = await requireUser()
-    console.log('[Workspace:switchWorkspace] Current auth user:', { id: user.id, email: user.email })
 
     const workspaceResult = await getSupabase()
       .from('workspaces')
       .select('id,owner_id,name')
       .eq('id', workspaceId)
       .maybeSingle()
-    console.log('[Workspace:switchWorkspace] Workspace row:', {
-      data: workspaceResult.data,
-      error: workspaceResult.error,
-    })
     if (workspaceResult.error) throw toError(workspaceResult.error, 'Failed to read workspace')
     if (!workspaceResult.data) throw new Error('Workspace not found')
 
@@ -179,14 +188,9 @@ export async function setCurrentWorkspace(workspaceId: string | null): Promise<S
       .eq('workspace_id', workspaceId)
       .eq('user_id', user.id)
       .maybeSingle()
-    console.log('[Workspace:switchWorkspace] Workspace member row:', {
-      data: memberResult.data,
-      error: memberResult.error,
-    })
     if (memberResult.error) throw toError(memberResult.error, 'Failed to read workspace member')
 
     if (!memberResult.data && workspaceResult.data.owner_id === user.id) {
-      console.warn('[Workspace:switchWorkspace] Owner membership row not visible yet, retrying once:', workspaceId)
       await delay(250)
       memberResult = await getSupabase()
         .from('workspace_members')
@@ -194,40 +198,21 @@ export async function setCurrentWorkspace(workspaceId: string | null): Promise<S
         .eq('workspace_id', workspaceId)
         .eq('user_id', user.id)
         .maybeSingle()
-      console.log('[Workspace:switchWorkspace] Workspace member retry row:', {
-        data: memberResult.data,
-        error: memberResult.error,
-      })
       if (memberResult.error) throw toError(memberResult.error, 'Failed to read workspace member')
     }
 
     const isOwner = workspaceResult.data.owner_id === user.id
     const isActiveMember = memberResult.data?.user_id === user.id && memberResult.data.status === 'active'
     const allowed = isOwner || isActiveMember
-    console.log('[Workspace:switchWorkspace] Access decision:', {
-      workspaceOwnerId: workspaceResult.data.owner_id,
-      currentUserId: user.id,
-      isOwner,
-      memberUserId: memberResult.data?.user_id ?? null,
-      memberStatus: memberResult.data?.status ?? null,
-      isActiveMember,
-      allowed,
-    })
 
     if (!allowed) throw new Error('Workspace access denied')
 
     const permissions = await getSupabase().rpc('get_my_permissions', { p_workspace_id: workspaceId })
-    console.log('[Workspace:switchWorkspace] Permission query result:', permissions)
     if (permissions.error) throw toError(permissions.error, 'Failed to check workspace permissions')
-  } else {
-    console.log('[Workspace:switchWorkspace] Clearing current workspace')
   }
 
   currentWorkspaceId = workspaceId
-  console.log('[Workspace:switchWorkspace] Local state write result:', { currentWorkspaceId })
-  const result: SwitchWorkspaceResult = { success: true, workspaceId }
-  console.log('[Workspace:switchWorkspace] Final return payload:', result)
-  return result
+  return { success: true, workspaceId }
 }
 
 export async function ensureUserProfile(): Promise<void> {
@@ -257,13 +242,12 @@ export async function acceptPendingInvitations(): Promise<string | null> {
 export async function ensureDefaultWorkspace(): Promise<WorkspaceWithStats> {
   requireConfigured()
   const user = await requireUser()
-  console.log('[Workspace:ensureDefaultWorkspace] Ensuring default workspace for user:', { id: user.id, email: user.email })
 
   // Ensure user profile exists
   try {
     await ensureUserProfile()
   } catch (error) {
-    console.error('[Workspace:ensureDefaultWorkspace] Failed to ensure user profile:', error)
+    console.error('[Workspace:ensureDefaultWorkspace] Failed to ensure user profile:', describeError(error))
     throw toError(error, 'Failed to ensure user profile')
   }
 
@@ -274,8 +258,6 @@ export async function ensureDefaultWorkspace(): Promise<WorkspaceWithStats> {
     .eq('owner_id', user.id)
     .eq('is_default', true)
     .maybeSingle()
-
-  console.log('[Workspace:ensureDefaultWorkspace] Existing default workspace:', { data: defaultWorkspace, error: findError })
 
   if (findError) throw toError(findError, 'Failed to find default workspace')
 
@@ -292,11 +274,10 @@ export async function ensureDefaultWorkspace(): Promise<WorkspaceWithStats> {
       }, { onConflict: 'workspace_id,user_id' })
 
     if (memberError) {
-      console.warn('[Workspace:ensureDefaultWorkspace] Failed to ensure owner membership:', memberError)
+      console.warn('[Workspace:ensureDefaultWorkspace] Failed to ensure owner membership:', describeError(memberError))
       // Don't throw - membership might already exist or RLS might block, but workspace is valid
     }
 
-    console.log('[Workspace:ensureDefaultWorkspace] Returning existing default workspace')
     // Return minimal workspace info without calling getMyWorkspaces to avoid infinite loop
     return {
       id: defaultWorkspace.id,
@@ -321,8 +302,6 @@ export async function ensureDefaultWorkspace(): Promise<WorkspaceWithStats> {
     .eq('name', 'My Workspace')
     .maybeSingle()
 
-  console.log('[Workspace:ensureDefaultWorkspace] Existing "My Workspace":', { data: myWorkspace, error: myWorkspaceError })
-
   if (myWorkspaceError) throw toError(myWorkspaceError, 'Failed to find My Workspace')
 
   if (myWorkspace) {
@@ -345,8 +324,6 @@ export async function ensureDefaultWorkspace(): Promise<WorkspaceWithStats> {
         status: 'active',
       }, { onConflict: 'workspace_id,user_id' })
 
-    console.log('[Workspace:ensureDefaultWorkspace] Updated existing My Workspace to default')
-
     // Return minimal workspace info without calling getMyWorkspaces to avoid infinite loop
     return {
       id: myWorkspace.id,
@@ -364,7 +341,6 @@ export async function ensureDefaultWorkspace(): Promise<WorkspaceWithStats> {
   }
 
   // Create new "My Workspace"
-  console.log('[Workspace:ensureDefaultWorkspace] Creating new My Workspace')
   const { data: newWorkspace, error: createError } = await getSupabase()
     .from('workspaces')
     .insert({
@@ -378,8 +354,6 @@ export async function ensureDefaultWorkspace(): Promise<WorkspaceWithStats> {
 
   if (createError) throw toError(createError, 'Failed to create default workspace')
   if (!newWorkspace) throw new Error('Failed to create default workspace: no data returned')
-
-  console.log('[Workspace:ensureDefaultWorkspace] Created new default workspace:', newWorkspace)
 
   // Ensure owner membership
   await getSupabase()
@@ -409,16 +383,10 @@ export async function ensureDefaultWorkspace(): Promise<WorkspaceWithStats> {
 }
 
 async function getMyWorkspacesDirect(user: Awaited<ReturnType<typeof requireUser>>): Promise<WorkspaceWithStats[]> {
-  console.log('[Workspace:getWorkspaces] Running direct fallback query for user:', { id: user.id, email: user.email })
-
   const owned = await getSupabase()
     .from('workspaces')
-    .select('id,name,owner_id,settings,created_at,updated_at')
+    .select('id,name,owner_id,settings,is_default,created_at,updated_at')
     .eq('owner_id', user.id)
-  console.log('[Workspace:getWorkspaces] Fallback owned workspaces response:', {
-    data: owned.data,
-    error: owned.error,
-  })
   if (owned.error) throw toError(owned.error, 'Failed to read owned workspaces')
 
   const memberRows = await getSupabase()
@@ -426,10 +394,6 @@ async function getMyWorkspacesDirect(user: Awaited<ReturnType<typeof requireUser
     .select('workspace_id,user_id,role,status')
     .eq('user_id', user.id)
     .eq('status', 'active')
-  console.log('[Workspace:getWorkspaces] Fallback membership response:', {
-    data: memberRows.data,
-    error: memberRows.error,
-  })
   if (memberRows.error) throw toError(memberRows.error, 'Failed to read workspace memberships')
 
   const memberWorkspaceIds = [...new Set(((memberRows.data ?? []) as any[]).map((row) => row.workspace_id).filter(Boolean))]
@@ -441,12 +405,8 @@ async function getMyWorkspacesDirect(user: Awaited<ReturnType<typeof requireUser
   if (joinedIds.length > 0) {
     const joined = await getSupabase()
       .from('workspaces')
-      .select('id,name,owner_id,settings,created_at,updated_at')
+      .select('id,name,owner_id,settings,is_default,created_at,updated_at')
       .in('id', joinedIds)
-    console.log('[Workspace:getWorkspaces] Fallback joined workspaces response:', {
-      data: joined.data,
-      error: joined.error,
-    })
     if (joined.error) throw toError(joined.error, 'Failed to read joined workspaces')
     joinedRows = (joined.data ?? []) as any[]
   }
@@ -465,10 +425,6 @@ async function getMyWorkspacesDirect(user: Awaited<ReturnType<typeof requireUser
       .select('workspace_id,status')
       .in('workspace_id', workspaceIds)
       .eq('status', 'active')
-    console.log('[Workspace:getWorkspaces] Fallback member count response:', {
-      data: counts.data,
-      error: counts.error,
-    })
     if (!counts.error) allMembers = (counts.data ?? []) as any[]
   }
 
@@ -479,10 +435,6 @@ async function getMyWorkspacesDirect(user: Awaited<ReturnType<typeof requireUser
       .select('workspace_id,deleted_at')
       .in('workspace_id', workspaceIds)
       .is('deleted_at', null)
-    console.log('[Workspace:getWorkspaces] Fallback profile count response:', {
-      data: profiles.data,
-      error: profiles.error,
-    })
     if (!profiles.error) allProfiles = (profiles.data ?? []) as any[]
   }
 
@@ -497,6 +449,7 @@ async function getMyWorkspacesDirect(user: Awaited<ReturnType<typeof requireUser
       memberCount: allMembers.filter((member) => member.workspace_id === row.id).length,
       profileCount: allProfiles.filter((profile) => profile.workspace_id === row.id).length,
       settings: row.settings ?? {},
+      isDefault: row.is_default ?? false,
       createdAt: toMs(row.created_at),
       updatedAt: toMs(row.updated_at),
     } as WorkspaceWithStats
@@ -506,31 +459,35 @@ async function getMyWorkspacesDirect(user: Awaited<ReturnType<typeof requireUser
 export async function getMyWorkspaces(): Promise<WorkspaceWithStats[]> {
   requireConfigured()
   const user = await requireUser()
-  console.log('[Workspace:getWorkspaces] Current auth user:', { id: user.id, email: user.email })
   
   // Ensure default workspace exists first
+  let defaultWorkspace: WorkspaceWithStats | null = null
   try {
-    await ensureDefaultWorkspace()
+    defaultWorkspace = await ensureDefaultWorkspace()
   } catch (error) {
-    console.error('[Workspace:getWorkspaces] ensureDefaultWorkspace failed:', error)
+    console.error('[Workspace:getWorkspaces] ensureDefaultWorkspace failed:', describeError(error))
     throw toError(error, 'Failed to ensure default workspace')
   }
   
   try {
     await acceptPendingInvitations()
   } catch (error) {
-    console.warn('[Workspace:getWorkspaces] acceptPendingInvitations failed, continuing:', error)
+    console.warn('[Workspace:getWorkspaces] acceptPendingInvitations failed, continuing:', describeError(error))
   }
 
-  console.log('[Workspace:getWorkspaces] Calling RPC get_my_workspaces')
   let { data, error } = await getSupabase().rpc('get_my_workspaces')
-  console.log('[Workspace:getWorkspaces] RPC get_my_workspaces response:', { data, error })
   if (error) {
     console.warn('[Workspace:getWorkspaces] RPC failed, using direct fallback:', describeError(error))
     data = await getMyWorkspacesDirect(user) as any[]
   }
 
-  const workspaces = ((data ?? []) as any[]).map((row) => 'ownerId' in row ? row as WorkspaceWithStats : mapWorkspace(row))
+  const workspaces = ((data ?? []) as any[]).map((row) => {
+    const workspace = 'ownerId' in row ? row as WorkspaceWithStats : mapWorkspace(row)
+    return {
+      ...workspace,
+      isDefault: workspace.isDefault === true || workspace.id === defaultWorkspace?.id,
+    }
+  })
   
   // Sort: default workspace first, then by created_at
   workspaces.sort((a, b) => {
@@ -539,7 +496,6 @@ export async function getMyWorkspaces(): Promise<WorkspaceWithStats[]> {
     return a.createdAt - b.createdAt
   })
   
-  console.log('[Workspace:getWorkspaces] Final workspace list:', workspaces)
   if (!currentWorkspaceId || !workspaces.some((workspace) => workspace.id === currentWorkspaceId)) {
     currentWorkspaceId = workspaces[0]?.id ?? null
   }
@@ -559,9 +515,6 @@ export async function createWorkspace(input: string | CreateWorkspaceInput): Pro
   if (!name) throw new Error('Workspace name is required')
 
   const payload = { name, owner_id: user.id, settings: description ? { description } : {} }
-  console.log('[Workspace:createWorkspace] Payload received:', input)
-  console.log('[Workspace:createWorkspace] Current auth user:', { id: user.id, email: user.email })
-  console.log('[Workspace:createWorkspace] Insert payload:', payload)
 
   const { data, error } = await getSupabase()
     .from('workspaces')
@@ -569,23 +522,15 @@ export async function createWorkspace(input: string | CreateWorkspaceInput): Pro
     .select('*')
     .single()
 
-  console.log('[Workspace:createWorkspace] Supabase insert response:', { data, error })
-
   if (error) {
-    console.error('[Workspace:createWorkspace] Supabase insert error:', {
-      message: error.message,
-      details: error.details,
-      hint: error.hint,
-      code: error.code,
-    })
+    console.error('[Workspace:createWorkspace] Supabase insert error:', describeError(error))
     throw toError(error, 'Failed to create workspace')
   }
   if (!data?.id) {
-    console.error('[Workspace:createWorkspace] Insert returned no workspace row:', data)
+    console.error('[Workspace:createWorkspace] Insert returned no workspace row')
     throw new Error('Failed to create workspace: insert returned no workspace row')
   }
 
-  console.log('[Workspace:createWorkspace] Returned workspace row:', data)
   currentWorkspaceId = data.id
   return {
     id: data.id,
@@ -597,7 +542,7 @@ export async function createWorkspace(input: string | CreateWorkspaceInput): Pro
   }
 }
 
-export async function updateWorkspace(workspaceId: string, updates: { name?: string; description?: string }): Promise<void> {
+export async function updateWorkspace(workspaceId: string, updates: { name?: string; description?: string; settings?: any }): Promise<void> {
   requireConfigured()
   const user = await requireUser()
   
@@ -620,9 +565,13 @@ export async function updateWorkspace(workspaceId: string, updates: { name?: str
     payload.name = trimmedName
   }
   
+  // Support both description (legacy) and settings (new)
   if (updates.description !== undefined) {
     const currentSettings = (workspace.settings as any) ?? {}
     payload.settings = { ...currentSettings, description: updates.description.trim() }
+  } else if (updates.settings !== undefined) {
+    const currentSettings = (workspace.settings as any) ?? {}
+    payload.settings = { ...currentSettings, ...updates.settings }
   }
   
   const { error } = await getSupabase()
@@ -660,13 +609,10 @@ export async function updateWorkspaceSettings(workspaceId: string, settings: { p
 }
 
 export async function inviteMember(input: InviteMemberInput): Promise<WorkspaceInvitation> {
-  console.log('[Main:inviteMember] Called with input:', input)
   requireConfigured()
   const user = await requireUser()
-  console.log('[Main:inviteMember] Current user:', { id: user.id, email: user.email })
   
   const hasInvitePermission = await hasPermission('member.invite', input.workspaceId)
-  console.log('[Main:inviteMember] hasPermission(member.invite):', hasInvitePermission)
   
   if (!hasInvitePermission) {
     throw new Error('Permission denied: member.invite')
@@ -685,18 +631,14 @@ export async function inviteMember(input: InviteMemberInput): Promise<WorkspaceI
     token: token(),
     expires_at: expiresAt,
   }
-  console.log('[Main:inviteMember] Insert payload:', insertPayload)
   
   const { data, error } = await getSupabase()
     .from('workspace_invitations')
     .insert(insertPayload)
     .select('*')
     .single()
-
-  console.log('[Main:inviteMember] Supabase response:', { data, error })
   
   if (error) {
-    console.error('[Main:inviteMember] Supabase error:', error)
     const errorMessage = [
       error.message,
       error.details ? `Details: ${error.details}` : null,
@@ -706,7 +648,6 @@ export async function inviteMember(input: InviteMemberInput): Promise<WorkspaceI
     throw new Error(errorMessage || 'Failed to create invitation')
   }
   
-  console.log('[Main:inviteMember] Success, returning invitation')
   return mapInvitation(data)
 }
 
@@ -726,11 +667,48 @@ export async function getWorkspaceMembers(workspaceId: string): Promise<Workspac
     ? await getSupabase().from('user_profiles').select('id,email,display_name').in('id', userIds)
     : { data: [] as any[] }
   const profileById = new Map((profiles ?? []).map((profile: any) => [profile.id, profile]))
-  return rows.map((row) => mapMember({
+  const members = rows.map((row) => mapMember({
     ...row,
     profile_email: profileById.get(row.user_id)?.email,
     display_name: profileById.get(row.user_id)?.display_name,
   }))
+
+  const existingEmails = new Set(members.map((member) => member.email.toLowerCase()).filter(Boolean))
+  try {
+    const accepted = await getSupabase()
+      .from('workspace_invitations')
+      .select('id,workspace_id,email,role,user_group_id,profile_limit,note,invited_by,accepted_at,updated_at')
+      .eq('workspace_id', workspaceId)
+      .eq('status', 'accepted')
+
+    if (!accepted.error) {
+      for (const invitation of (accepted.data ?? []) as any[]) {
+        const email = String(invitation.email ?? '').trim().toLowerCase()
+        if (!email || existingEmails.has(email)) continue
+        existingEmails.add(email)
+        members.push({
+          id: `invitation:${invitation.id}`,
+          workspaceId: invitation.workspace_id,
+          userId: '',
+          email,
+          displayName: email.split('@')[0] || null,
+          isInvitationFallback: true,
+          role: invitation.role,
+          status: 'active',
+          userGroupId: invitation.user_group_id ?? null,
+          profileLimit: invitation.profile_limit ?? null,
+          note: invitation.note ?? '',
+          invitedBy: invitation.invited_by ?? null,
+          joinedAt: invitation.accepted_at ? toMs(invitation.accepted_at) : Date.now(),
+          updatedAt: invitation.updated_at ? toMs(invitation.updated_at) : Date.now(),
+        })
+      }
+    }
+  } catch (error) {
+    console.warn('[Workspace:getWorkspaceMembers] Accepted invitation fallback failed:', describeError(error))
+  }
+
+  return members.sort((a, b) => a.joinedAt - b.joinedAt)
 }
 
 export async function getWorkspaceInvitations(workspaceId: string): Promise<WorkspaceInvitation[]> {
@@ -739,6 +717,7 @@ export async function getWorkspaceInvitations(workspaceId: string): Promise<Work
     .from('workspace_invitations')
     .select('*')
     .eq('workspace_id', workspaceId)
+    .in('status', ['pending', 'expired'])
     .order('created_at', { ascending: false })
 
   if (error) throw error
@@ -836,7 +815,7 @@ export async function revokeInvitation(invitationId: string): Promise<void> {
     .from('workspace_invitations')
     .update({ status: 'revoked', revoked_at: new Date().toISOString() })
     .eq('id', invitationId)
-    .eq('status', 'pending')
+    .in('status', ['pending', 'expired'])
 
   if (error) throw error
 }
@@ -867,12 +846,42 @@ export async function resendInvitation(invitationId: string): Promise<void> {
 
 export async function removeMember(memberId: string): Promise<void> {
   requireConfigured()
+  if (memberId.startsWith('invitation:')) {
+    const invitationId = memberId.slice('invitation:'.length)
+    const { data: invitation, error: invitationError } = await getSupabase()
+      .from('workspace_invitations')
+      .select('id,workspace_id,email,role')
+      .eq('id', invitationId)
+      .eq('status', 'accepted')
+      .single()
+    if (invitationError) throw toError(invitationError, 'Failed to read accepted invitation')
+    if (!(await hasPermission('member.remove', invitation.workspace_id))) {
+      throw new Error('Permission denied: member.remove')
+    }
+
+    const email = String(invitation.email ?? '').trim().toLowerCase()
+    const { error: memberError } = await getSupabase()
+      .from('workspace_members')
+      .update({ status: 'removed' })
+      .eq('workspace_id', invitation.workspace_id)
+      .eq('email', email)
+      .neq('role', 'owner')
+    if (memberError) throw toError(memberError, 'Failed to remove workspace member')
+
+    const { error: inviteError } = await getSupabase()
+      .from('workspace_invitations')
+      .update({ status: 'revoked', revoked_at: new Date().toISOString() })
+      .eq('id', invitationId)
+    if (inviteError) throw toError(inviteError, 'Failed to update invitation')
+    return
+  }
+
   const { data: member, error: readError } = await getSupabase()
     .from('workspace_members')
     .select('workspace_id,role')
     .eq('id', memberId)
     .single()
-  if (readError) throw readError
+  if (readError) throw toError(readError, 'Failed to read workspace member')
   if (member.role === 'owner') throw new Error('Cannot remove workspace owner')
   if (!(await hasPermission('member.remove', member.workspace_id))) {
     throw new Error('Permission denied: member.remove')
@@ -883,7 +892,7 @@ export async function removeMember(memberId: string): Promise<void> {
     .eq('id', memberId)
     .neq('role', 'owner')
 
-  if (error) throw error
+  if (error) throw toError(error, 'Failed to remove workspace member')
 }
 
 export async function updateMemberRole(memberId: string, role: WorkspaceRole): Promise<void> {
@@ -894,7 +903,7 @@ export async function updateMemberRole(memberId: string, role: WorkspaceRole): P
     .select('workspace_id,role')
     .eq('id', memberId)
     .single()
-  if (readError) throw readError
+  if (readError) throw toError(readError, 'Failed to read workspace member')
   if (member.role === 'owner') throw new Error('Cannot update workspace owner')
   if (!(await hasPermission('member.edit_role', member.workspace_id))) {
     throw new Error('Permission denied: member.edit_role')
@@ -905,17 +914,57 @@ export async function updateMemberRole(memberId: string, role: WorkspaceRole): P
     .eq('id', memberId)
     .neq('role', 'owner')
 
-  if (error) throw error
+  if (error) throw toError(error, 'Failed to update member role')
 }
 
 export async function updateMember(memberId: string, input: UpdateWorkspaceMemberInput): Promise<void> {
   requireConfigured()
+  if (memberId.startsWith('invitation:')) {
+    const invitationId = memberId.slice('invitation:'.length)
+    const { data: invitation, error: invitationError } = await getSupabase()
+      .from('workspace_invitations')
+      .select('id,workspace_id,email,role')
+      .eq('id', invitationId)
+      .eq('status', 'accepted')
+      .single()
+    if (invitationError) throw toError(invitationError, 'Failed to read accepted invitation')
+    if (!(await hasPermission('member.edit_role', invitation.workspace_id))) {
+      throw new Error('Permission denied: member.edit_role')
+    }
+
+    const patch: Record<string, unknown> = {}
+    if (input.role) {
+      if (input.role === 'owner') throw new Error('Cannot assign owner role')
+      patch.role = input.role
+    }
+    if ('userGroupId' in input) patch.user_group_id = input.userGroupId ?? null
+    if ('profileLimit' in input) patch.profile_limit = input.profileLimit ?? null
+    if ('note' in input) patch.note = input.note ?? ''
+    if (Object.keys(patch).length === 0) return
+
+    const email = String(invitation.email ?? '').trim().toLowerCase()
+    const { error: memberError } = await getSupabase()
+      .from('workspace_members')
+      .update(patch)
+      .eq('workspace_id', invitation.workspace_id)
+      .eq('email', email)
+      .neq('role', 'owner')
+    if (memberError) throw toError(memberError, 'Failed to update workspace member')
+
+    const { error: inviteError } = await getSupabase()
+      .from('workspace_invitations')
+      .update(patch)
+      .eq('id', invitationId)
+    if (inviteError) throw toError(inviteError, 'Failed to update invitation')
+    return
+  }
+
   const { data: member, error: readError } = await getSupabase()
     .from('workspace_members')
     .select('workspace_id,role')
     .eq('id', memberId)
     .single()
-  if (readError) throw readError
+  if (readError) throw toError(readError, 'Failed to read workspace member')
   if (member.role === 'owner') throw new Error('Cannot update workspace owner')
   if (!(await hasPermission('member.edit_role', member.workspace_id))) {
     throw new Error('Permission denied: member.edit_role')
@@ -936,12 +985,35 @@ export async function updateMember(memberId: string, input: UpdateWorkspaceMembe
     .eq('id', memberId)
     .neq('role', 'owner')
 
-  if (error) throw error
+  if (error) throw toError(error, 'Failed to update workspace member')
 }
 
 export async function getMyPermissions(workspaceId = currentWorkspaceId): Promise<RolePermissionMap> {
   requireConfigured()
   if (!workspaceId) return DefaultRolePermissionMap.viewer
+
+  const user = await requireUser()
+  const { data: member, error: memberError } = await getSupabase()
+    .from('workspace_members')
+    .select('role,user_group_id')
+    .eq('workspace_id', workspaceId)
+    .eq('user_id', user.id)
+    .eq('status', 'active')
+    .maybeSingle()
+
+  if (memberError) throw memberError
+  if (member?.role === 'owner') return DefaultRolePermissionMap.owner
+  if (member?.user_group_id) {
+    const { data: group, error: groupError } = await getSupabase()
+      .from('workspace_user_groups')
+      .select('description')
+      .eq('id', member.user_group_id)
+      .single()
+
+    if (groupError) throw groupError
+    const groupPermissions = parseGroupPermissions(group?.description)
+    if (groupPermissions) return groupPermissions
+  }
 
   const { data, error } = await getSupabase().rpc('get_my_permissions', { p_workspace_id: workspaceId })
   if (error) throw error
@@ -996,7 +1068,6 @@ export async function updateRolePermissions(workspaceId: string, role: Workspace
 export async function deleteWorkspace(workspaceId: string): Promise<{ success: true; switchedToWorkspaceId: string | null }> {
   requireConfigured()
   const user = await requireUser()
-  console.log('[Workspace:deleteWorkspace] Deleting workspace:', workspaceId)
 
   // Load workspace
   const { data: workspace, error: readError } = await getSupabase()
@@ -1004,8 +1075,6 @@ export async function deleteWorkspace(workspaceId: string): Promise<{ success: t
     .select('id,name,owner_id,is_default')
     .eq('id', workspaceId)
     .maybeSingle()
-
-  console.log('[Workspace:deleteWorkspace] Workspace data:', { data: workspace, error: readError })
 
   if (readError) throw toError(readError, 'Failed to read workspace')
   if (!workspace) throw new Error('Workspace not found')
@@ -1016,7 +1085,7 @@ export async function deleteWorkspace(workspaceId: string): Promise<{ success: t
   }
 
   // Check if it's default workspace
-  if (workspace.is_default === true || workspace.name === 'My Workspace') {
+  if (workspace.is_default === true) {
     throw new Error('Cannot delete default workspace. Default workspace cannot be removed.')
   }
 
@@ -1029,13 +1098,9 @@ export async function deleteWorkspace(workspaceId: string): Promise<{ success: t
 
   if (deleteError) throw toError(deleteError, 'Failed to delete workspace')
 
-  console.log('[Workspace:deleteWorkspace] Workspace deleted successfully')
-
   // If deleted workspace was current, switch to default workspace
   let switchedToWorkspaceId: string | null = null
   if (currentWorkspaceId === workspaceId) {
-    console.log('[Workspace:deleteWorkspace] Deleted workspace was current, switching to default')
-    
     // Get default workspace
     const { data: defaultWorkspace } = await getSupabase()
       .from('workspaces')
@@ -1047,17 +1112,14 @@ export async function deleteWorkspace(workspaceId: string): Promise<{ success: t
     if (defaultWorkspace) {
       await setCurrentWorkspace(defaultWorkspace.id)
       switchedToWorkspaceId = defaultWorkspace.id
-      console.log('[Workspace:deleteWorkspace] Switched to default workspace:', switchedToWorkspaceId)
     } else {
       // Fallback: get any workspace
       const workspaces = await getMyWorkspaces()
       if (workspaces.length > 0) {
         await setCurrentWorkspace(workspaces[0].id)
         switchedToWorkspaceId = workspaces[0].id
-        console.log('[Workspace:deleteWorkspace] Switched to first available workspace:', switchedToWorkspaceId)
       } else {
         await setCurrentWorkspace(null)
-        console.log('[Workspace:deleteWorkspace] No workspaces available, cleared current workspace')
       }
     }
   }

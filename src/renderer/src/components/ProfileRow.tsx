@@ -162,7 +162,7 @@ export default function ProfileRow({
             className="font-mono text-xs text-[#9CA3AF] select-text cursor-text"
             title={profile.id}
           >
-            {getDisplayId(profile.id, allProfiles)}
+            {profile.displayId ?? getDisplayId(profile.id, allProfiles)}
           </span>
         </td>
 

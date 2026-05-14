@@ -542,53 +542,37 @@ app.whenReady().then(() => {
   })
 
   ipcMain.handle('workspaces:getWorkspaces', async () => {
-    console.log('[IPC workspaces:getWorkspaces] Received request')
     try {
-      const result = await workspaces.getMyWorkspaces()
-      console.log('[IPC workspaces:getWorkspaces] Returning workspaces:', result)
-      return result
+      return await workspaces.getMyWorkspaces()
     } catch (error) {
       const normalized = ipcError(error, 'Failed to load workspaces')
-      console.error('[IPC workspaces:getWorkspaces] Failed:', {
-        message: normalized.message,
-        raw: error,
-      })
+      console.error('[IPC workspaces:getWorkspaces] Failed:', normalized.message)
       throw normalized
     }
   })
   ipcMain.handle('workspaces:getCurrent', () => workspaces.getCurrentWorkspace())
   ipcMain.handle('workspaces:switchWorkspace', async (_, workspaceId: string | null) => {
-    console.log('[IPC workspaces:switchWorkspace] Received workspaceId:', workspaceId)
     try {
       const result = await workspaces.setCurrentWorkspace(workspaceId)
       try {
         await cloudSync.syncGroupsAndProfiles(true)
       } catch (syncError) {
-        console.warn('[IPC workspaces:switchWorkspace] Cloud sync failed after switch:', syncError)
+        const message = syncError instanceof Error ? syncError.message : String(syncError)
+        console.warn('[IPC workspaces:switchWorkspace] Cloud sync failed after switch:', message)
       }
-      console.log('[IPC workspaces:switchWorkspace] Returning payload:', result)
       return result
     } catch (error) {
       const normalized = ipcError(error, 'Failed to switch workspace')
-      console.error('[IPC workspaces:switchWorkspace] Failed:', {
-        message: normalized.message,
-        raw: error,
-      })
+      console.error('[IPC workspaces:switchWorkspace] Failed:', normalized.message)
       throw normalized
     }
   })
   ipcMain.handle('workspaces:createWorkspace', async (_, input: any) => {
-    console.log('[IPC workspaces:createWorkspace] Received payload:', input)
     try {
-      const workspace = await workspaces.createWorkspace(input)
-      console.log('[IPC workspaces:createWorkspace] Returning workspace:', workspace)
-      return workspace
+      return await workspaces.createWorkspace(input)
     } catch (error) {
       const normalized = ipcError(error, 'Failed to create workspace')
-      console.error('[IPC workspaces:createWorkspace] Failed:', {
-        message: normalized.message,
-        raw: error,
-      })
+      console.error('[IPC workspaces:createWorkspace] Failed:', normalized.message)
       throw normalized
     }
   })
@@ -599,16 +583,46 @@ app.whenReady().then(() => {
     try {
       return await workspaces.inviteMember(input)
     } catch (error) {
-      console.error('[IPC:inviteMember] Error:', error)
       const message = error instanceof Error ? error.message : String(error)
+      console.error('[IPC:inviteMember] Error:', message)
       throw new Error(message)
     }
   })
-  ipcMain.handle('workspaces:revokeInvitation', (_, invitationId: string) => workspaces.revokeInvitation(invitationId))
-  ipcMain.handle('workspaces:resendInvitation', (_, invitationId: string) => workspaces.resendInvitation(invitationId))
-  ipcMain.handle('workspaces:removeMember', (_, memberId: string) => workspaces.removeMember(memberId))
-  ipcMain.handle('workspaces:updateMemberRole', (_, memberId: string, role: any) => workspaces.updateMemberRole(memberId, role))
-  ipcMain.handle('workspaces:updateMember', (_, memberId: string, input: any) => workspaces.updateMember(memberId, input))
+  ipcMain.handle('workspaces:revokeInvitation', async (_, invitationId: string) => {
+    try {
+      return await workspaces.revokeInvitation(invitationId)
+    } catch (error) {
+      throw ipcError(error, 'Failed to revoke invitation')
+    }
+  })
+  ipcMain.handle('workspaces:resendInvitation', async (_, invitationId: string) => {
+    try {
+      return await workspaces.resendInvitation(invitationId)
+    } catch (error) {
+      throw ipcError(error, 'Failed to resend invitation')
+    }
+  })
+  ipcMain.handle('workspaces:removeMember', async (_, memberId: string) => {
+    try {
+      return await workspaces.removeMember(memberId)
+    } catch (error) {
+      throw ipcError(error, 'Failed to remove member')
+    }
+  })
+  ipcMain.handle('workspaces:updateMemberRole', async (_, memberId: string, role: any) => {
+    try {
+      return await workspaces.updateMemberRole(memberId, role)
+    } catch (error) {
+      throw ipcError(error, 'Failed to update member role')
+    }
+  })
+  ipcMain.handle('workspaces:updateMember', async (_, memberId: string, input: any) => {
+    try {
+      return await workspaces.updateMember(memberId, input)
+    } catch (error) {
+      throw ipcError(error, 'Failed to update member')
+    }
+  })
   ipcMain.handle('workspaces:getPermissions', (_, workspaceId?: string) => workspaces.getMyPermissions(workspaceId))
   ipcMain.handle('workspaces:getRolePermissions', (_, workspaceId?: string) => workspaces.getWorkspaceRolePermissions(workspaceId))
   ipcMain.handle('workspaces:updateRolePermissions', (_, workspaceId: string, role: any, permissions: any) => workspaces.updateRolePermissions(workspaceId, role, permissions))

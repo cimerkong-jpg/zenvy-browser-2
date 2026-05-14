@@ -74,6 +74,13 @@ Chi tiết kỹ thuật nằm trong `.claude/rules/`:
 - Level hiện tại: Level 2 gần hoàn thành.
 - Phần tiếp theo: Automation Scripts.
 
+## Current Operational Focus
+- Phase 0/1 cleanup da xong pass dau: test script, log nhay cam, session storage, RLS canonical, archive file tam.
+- Workspace/RLS source of truth hien tai: `WORKSPACE-RLS-CANONICAL.sql`.
+- QA trai nghiem nguoi dung hien tai: `USER-EXPERIENCE-QA.md`.
+- Checks da pass tren Windows: `npm.cmd run typecheck`, `npm.cmd test`, `git diff --check`, `npm.cmd run build`.
+- Next: Apply `WORKSPACE-RLS-CANONICAL.sql`, sau do chay QA theo `USER-EXPERIENCE-QA.md`.
+
 ## AI Agents
 Agents nằm trong `.claude/agents/` và được dùng theo loại task:
 

@@ -3,7 +3,54 @@
 @import 'tailwindcss/utilities';
 
 .field {
-  @apply w-full rounded-lg border border-[#1F2230] bg-[#111218] px-4 py-2 text-sm text-white outline-none placeholder:text-slate-500 focus:border-[#7C3AED];
+  @apply w-full rounded-lg border border-[#2F3B4B] bg-[#18212C] px-4 py-2 text-sm text-white outline-none placeholder:text-[#64748B] focus:border-[#3B82F6];
+}
+
+.mkt-shell {
+  background: #121922;
+}
+
+.mkt-panel {
+  background: #171f2a;
+  border: 1px dashed rgba(73, 91, 112, 0.58);
+  border-radius: 12px;
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.025),
+    0 10px 28px rgba(0, 0, 0, 0.08);
+}
+
+.mkt-panel-soft {
+  background: #1c2531;
+  border: 1px dashed rgba(61, 76, 96, 0.52);
+  border-radius: 12px;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.018);
+}
+
+.mkt-divider-right {
+  border-right: 1px dashed rgba(73, 91, 112, 0.55);
+}
+
+.mkt-divider-bottom {
+  border-bottom: 1px dashed rgba(73, 91, 112, 0.55);
+}
+
+.mkt-input {
+  background: #121922;
+  border: 1px solid #2f3b4b;
+  border-radius: 7px;
+  color: #e5edf7;
+  outline: none;
+  transition: border-color 160ms ease, background-color 160ms ease, box-shadow 160ms ease;
+}
+
+.mkt-input:focus {
+  border-color: #3b82f6;
+  box-shadow: 0 0 0 2px rgba(59, 130, 246, 0.08);
+}
+
+.mkt-table-head {
+  background: #2b3744;
+  border-radius: 10px;
 }
 
 /* CSS Variables for theming */

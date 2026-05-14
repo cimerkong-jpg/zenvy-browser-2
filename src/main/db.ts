@@ -43,9 +43,70 @@ function normalizeProfile(profile: any): Profile {
   return {
     ...rest,
     id: String(profile?.id ?? ''),
+    displayId: typeof profile?.displayId === 'string' ? profile.displayId : undefined,
     workspaceId: typeof profile?.workspaceId === 'string' ? profile.workspaceId : null,
     groupId: typeof profile?.groupId === 'string' ? profile.groupId : null,
   }
+}
+
+function getUsedDisplayIds(profiles: Profile[]): Set<number> {
+  return new Set(
+    profiles
+      .map((profile) => Number(profile.displayId))
+      .filter((value) => Number.isInteger(value) && value >= 1001)
+  )
+}
+
+function nextAvailableDisplayId(used: Set<number>, start: number): number {
+  let value = Math.max(1001, start)
+  while (used.has(value)) value += 1
+  return value
+}
+
+function ensureProfileDisplayIds(data: StoreSchema): { data: StoreSchema; changed: boolean } {
+  let changed = false
+  const used = getUsedDisplayIds(data.profiles)
+  const seen = new Set<number>()
+  let nextId = nextAvailableDisplayId(used, data.nextProfileDisplayId ?? 1001)
+
+  const profiles = [...data.profiles]
+    .sort((a, b) => a.createdAt - b.createdAt)
+    .map((profile) => {
+      const current = Number(profile.displayId)
+      if (Number.isInteger(current) && current >= 1001 && !seen.has(current)) {
+        seen.add(current)
+        return profile
+      }
+
+      const displayId = nextId
+      used.add(displayId)
+      seen.add(displayId)
+      nextId = nextAvailableDisplayId(used, displayId + 1)
+      changed = true
+      return { ...profile, displayId: String(displayId), updatedAt: profile.updatedAt ?? Date.now() }
+    })
+
+  const byId = new Map(profiles.map((profile) => [profile.id, profile]))
+  const orderedProfiles = data.profiles.map((profile) => byId.get(profile.id) ?? profile)
+  const storedNextId = data.nextProfileDisplayId ?? 1001
+  if (nextId !== storedNextId) changed = true
+
+  return {
+    data: {
+      ...data,
+      profiles: orderedProfiles,
+      nextProfileDisplayId: nextId,
+    },
+    changed,
+  }
+}
+
+function reserveProfileDisplayId(data: StoreSchema): string {
+  const used = getUsedDisplayIds(data.profiles)
+  const displayId = nextAvailableDisplayId(used, data.nextProfileDisplayId ?? 1001)
+  used.add(displayId)
+  data.nextProfileDisplayId = nextAvailableDisplayId(used, displayId + 1)
+  return String(displayId)
 }
 
 function read(): StoreSchema {
@@ -53,11 +114,17 @@ function read(): StoreSchema {
   if (!existsSync(path)) return { profiles: [], groups: [], scripts: [] }
   try {
     const data = JSON.parse(readFileSync(path, 'utf-8'))
-    return {
+    const normalized = {
       profiles: Array.isArray(data.profiles) ? data.profiles.map(normalizeProfile) : [],
       groups: Array.isArray(data.groups) ? data.groups.map(normalizeGroup) : [],
-      scripts: Array.isArray(data.scripts) ? data.scripts : []
+      scripts: Array.isArray(data.scripts) ? data.scripts : [],
+      nextProfileDisplayId: typeof data.nextProfileDisplayId === 'number' ? data.nextProfileDisplayId : undefined,
     }
+    const migrated = ensureProfileDisplayIds(normalized)
+    if (migrated.changed) {
+      writeFileSync(path, JSON.stringify(migrated.data, null, 2), 'utf-8')
+    }
+    return migrated.data
   } catch {
     return { profiles: [], groups: [], scripts: [] }
   }
@@ -144,7 +211,7 @@ export function getProfiles(workspaceId?: string | null): Profile[] {
 
 export function createProfile(data: Omit<Profile, 'id' | 'createdAt' | 'updatedAt'>, workspaceId?: string | null): Profile {
   const db = read()
-  const profile: Profile = { ...data, workspaceId: data.workspaceId ?? workspaceId ?? null, id: uuidv4(), createdAt: Date.now(), updatedAt: Date.now() }
+  const profile: Profile = { ...data, workspaceId: data.workspaceId ?? workspaceId ?? null, id: uuidv4(), displayId: reserveProfileDisplayId(db), createdAt: Date.now(), updatedAt: Date.now() }
   db.profiles.unshift(profile)
   write(db)
   return profile
@@ -178,6 +245,7 @@ export function duplicateProfile(id: string): Profile | null {
   const duplicate: Profile = {
     ...original,
     id: uuidv4(),
+    displayId: reserveProfileDisplayId(db),
     name: `${original.name} Copy`,
     status: 'closed',
     createdAt: Date.now(),
@@ -204,11 +272,12 @@ export function importProfiles(jsonData: string, workspaceId?: string | null): P
   }
   const imported: Profile[] = []
   for (let i = importData.profiles.length - 1; i >= 0; i--) {
-    const { tags: _t, ...profileData } = importData.profiles[i]
+    const { tags: _t, displayId: _displayId, ...profileData } = importData.profiles[i]
     const newProfile: Profile = {
       ...profileData,
       workspaceId: workspaceId ?? profileData.workspaceId ?? null,
       id: uuidv4(),
+      displayId: reserveProfileDisplayId(db),
       createdAt: Date.now(),
       updatedAt: Date.now(),
       status: 'closed',
@@ -223,7 +292,7 @@ export function importProfiles(jsonData: string, workspaceId?: string | null): P
 export function replaceGroupsAndProfiles(groups: Group[], profiles: Profile[], workspaceId?: string | null): void {
   const db = read()
   if (workspaceId) {
-    write({
+    const nextData = ensureProfileDisplayIds({
       ...db,
       groups: [
         ...db.groups.filter((group) => group.workspaceId && group.workspaceId !== workspaceId),
@@ -233,12 +302,14 @@ export function replaceGroupsAndProfiles(groups: Group[], profiles: Profile[], w
         ...db.profiles.filter((profile) => profile.workspaceId && profile.workspaceId !== workspaceId),
         ...profiles,
       ],
-    })
+    }).data
+    write(nextData)
     return
   }
-  write({
+  const nextData = ensureProfileDisplayIds({
     ...db,
     groups,
     profiles,
-  })
+  }).data
+  write(nextData)
 }

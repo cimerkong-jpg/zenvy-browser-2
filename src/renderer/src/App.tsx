@@ -3,6 +3,7 @@ import { useStore } from './store/useStore'
 import { useAuth } from './store/useAuth'
 import { useWorkspace } from './store/useWorkspace'
 import Sidebar from './components/Sidebar'
+import Topbar from './components/Topbar'
 import ProfilesPage from './pages/ProfilesPage'
 import AutomationPage from './pages/AutomationPage'
 import SyncPage from './pages/SyncPage'
@@ -60,20 +61,17 @@ export default function App() {
     if (!authLoading && isAuthenticated && !workspaceInitializedRef.current) {
       workspaceInitializedRef.current = true
       setWorkspaceReady(false) // Not ready yet
-      console.log('[App] Auth ready, initializing workspace...')
       
       // First ensure default workspace exists and load all workspaces
       ensureDefaultWorkspace()
         .then(() => {
-          console.log('[App] Default workspace ensured, loading workspaces...')
           return loadWorkspaces()
         })
         .then(() => {
-          console.log('[App] Workspace initialized successfully')
           setWorkspaceReady(true) // Now ready - main process is synced
         })
         .catch((error) => {
-          console.error('[App] Failed to initialize workspace:', error)
+          console.error('[App] Failed to initialize workspace:', error instanceof Error ? error.message : String(error))
           setWorkspaceReady(false)
           workspaceInitializedRef.current = false // Allow retry
         })
@@ -83,7 +81,6 @@ export default function App() {
   // Load data when workspace is ready (after init or when workspace changes)
   useEffect(() => {
     if (isAuthenticated && workspaceReady && currentWorkspaceId) {
-      console.log('[App] Workspace ready, loading profiles...')
       loadAll()
       syncRunning()
     }
@@ -104,10 +101,7 @@ export default function App() {
   }, [isAuthenticated, activePage])
 
   const navigateTo = (page: Page) => {
-    console.log('[App] navigateTo called with:', page)
     setActivePage(page)
-    console.log('[App] activePage set to:', page)
-    console.log('[App] Current activePage state:', activePage)
     if (page === 'automation') setAutoSub('scripts')
   }
 
@@ -156,7 +150,7 @@ export default function App() {
 
   // Show main app if authenticated
   return (
-    <div className="mesh-bg flex h-screen w-screen overflow-hidden">
+    <div className="flex h-screen w-screen overflow-hidden bg-[#121922]">
       <div className="relative flex-shrink-0" style={{ width: sidebarWidth }}>
         <Sidebar
           activePage={activePage}
@@ -173,15 +167,18 @@ export default function App() {
           <div className="absolute right-0 top-1/2 -translate-y-1/2 h-8 w-1 rounded-full bg-purple-500/0 group-hover/sr:bg-purple-500/60 transition-colors" />
         </div>
       </div>
-      <main className="flex flex-col flex-1 min-h-0 overflow-hidden">
-        {activePage === 'profiles' && <ProfilesPage />}
-        {activePage === 'automation' && <AutomationPage subPage={autoSub} />}
-        {activePage === 'sync' && <SyncPage />}
-        {activePage === 'extensions' && <ExtensionPage />}
-        {activePage === 'members' && <MembersPage />}
-        {activePage === 'settings' && <SettingsPage />}
-        {activePage === 'workspace-settings' && <WorkspaceSettingsPage onNavigate={navigateTo} />}
-      </main>
+      <div className="flex min-w-0 flex-1 flex-col">
+        <Topbar activePage={activePage} onNavigate={navigateTo} />
+        <main className="min-h-0 flex-1 overflow-hidden">
+          {activePage === 'profiles' && <ProfilesPage />}
+          {activePage === 'automation' && <AutomationPage subPage={autoSub} />}
+          {activePage === 'sync' && <SyncPage />}
+          {activePage === 'extensions' && <ExtensionPage />}
+          {activePage === 'members' && <MembersPage />}
+          {activePage === 'settings' && <SettingsPage />}
+          {activePage === 'workspace-settings' && <WorkspaceSettingsPage />}
+        </main>
+      </div>
       <ToastContainer />
       {showTemplateManager && (
         <TemplateManager onClose={() => setShowTemplateManager(false)} />

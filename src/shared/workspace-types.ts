@@ -58,6 +58,7 @@ export interface WorkspaceMember {
   userId: string
   email: string
   displayName: string | null
+  isInvitationFallback?: boolean
   role: WorkspaceRole
   status: WorkspaceMemberStatus
   userGroupId: string | null

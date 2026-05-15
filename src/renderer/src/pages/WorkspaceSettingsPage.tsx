@@ -7,7 +7,7 @@ import type { WorkspaceWithStats } from '../../../shared/workspace-types'
 type TabType = 'general' | 'info'
 
 export default function WorkspaceSettingsPage() {
-  const { currentWorkspace, currentRole, workspaces, updateWorkspace, deleteWorkspace } = useWorkspace()
+  const { currentWorkspace, currentRole, workspaces, refreshWorkspaceData, updateWorkspace, deleteWorkspace } = useWorkspace()
   const [activeTab, setActiveTab] = useState<TabType>('info')
 
   if (!currentWorkspace) {
@@ -63,6 +63,7 @@ export default function WorkspaceSettingsPage() {
                 defaultWorkspaceId={defaultWorkspaceId}
                 isOwner={isOwner}
                 onDelete={deleteWorkspace}
+                onRefresh={refreshWorkspaceData}
               />
             )}
             {activeTab === 'info' && (
@@ -88,12 +89,14 @@ function GeneralTab({
   workspace,
   defaultWorkspaceId,
   isOwner,
-  onDelete
+  onDelete,
+  onRefresh
 }: {
   workspace: WorkspaceWithStats
   defaultWorkspaceId: string | null
   isOwner: boolean
   onDelete: (workspaceId: string) => Promise<any>
+  onRefresh: () => Promise<void>
 }) {
   const [permissionMode, setPermissionMode] = useState<'group' | 'profile'>(
     workspace.settings?.permissionMode || 'profile'
@@ -126,6 +129,7 @@ function GeneralTab({
         permissionMode,
         automationMode
       })
+      await onRefresh()
       toast.success('Đã lưu cài đặt')
       setHasChanges(false)
     } catch (error) {

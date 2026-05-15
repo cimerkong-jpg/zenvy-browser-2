@@ -123,6 +123,20 @@ async function requireAuthorizedProfileInCurrentWorkspace(profileId: string): Pr
   return profile
 }
 
+async function getAuthorizedProfilesInCurrentWorkspace(): Promise<Profile[]> {
+  const workspaceId = requireCurrentWorkspaceId()
+  return workspaces.filterAuthorizedProfiles(db.getProfiles(workspaceId))
+}
+
+async function getHistoryScope(): Promise<{ workspaceId: string; allowedProfileIds?: Set<string> }> {
+  const workspaceId = requireCurrentWorkspaceId()
+  const currentMember = await workspaces.getCurrentWorkspaceMember(workspaceId)
+  if (!currentMember) throw new Error('Permission denied: not an active workspace member')
+  if (currentMember.role === 'owner') return { workspaceId }
+  const profiles = await workspaces.filterAuthorizedProfiles(db.getProfiles(workspaceId))
+  return { workspaceId, allowedProfileIds: new Set(profiles.map((profile) => profile.id)) }
+}
+
 function requireGroupInCurrentWorkspace(groupId: string): void {
   const workspaceId = requireCurrentWorkspaceId()
   if (!db.getGroups(workspaceId).some((item) => item.id === groupId)) {
@@ -135,6 +149,13 @@ async function requireAuthorizedGroupInCurrentWorkspace(groupId: string): Promis
   const group = db.getGroups(workspaceId).find((item) => item.id === groupId)
   if (!group) throw new Error('Group does not belong to current workspace')
   await workspaces.assertGroupAuthorized(group, db.getProfiles(workspaceId))
+}
+
+async function requireDeletableGroupInCurrentWorkspace(groupId: string): Promise<void> {
+  const workspaceId = requireCurrentWorkspaceId()
+  const group = db.getGroups(workspaceId).find((item) => item.id === groupId)
+  if (!group) throw new Error('Group does not belong to current workspace')
+  await workspaces.assertGroupDeleteAuthorized(group, db.getProfiles(workspaceId))
 }
 
 function requireScriptInCurrentWorkspace(scriptId: string) {
@@ -207,21 +228,33 @@ app.whenReady().then(() => {
   ipcMain.handle('groups:create', async (_, name: string) => {
     if (!(await workspaces.hasPermission('group.create'))) throw new Error('Permission denied: group.create')
     const group = db.createGroup(name, requireCurrentWorkspaceId())
-    cloudSync.pushGroup(group).catch((err) => console.warn('[CloudSync] Failed to push group:', err))
-    return group
+    try {
+      await cloudSync.pushGroup(group)
+      return group
+    } catch (error) {
+      db.deleteGroup(group.id)
+      throw ipcError(error, 'Không thể đồng bộ nhóm hồ sơ')
+    }
   })
   ipcMain.handle('groups:update', async (_, id: string, data: { name: string }) => {
     if (!(await workspaces.hasPermission('group.edit'))) throw new Error('Permission denied: group.edit')
     await requireAuthorizedGroupInCurrentWorkspace(id)
+    const previous = db.getGroups(requireCurrentWorkspaceId()).find((group) => group.id === id)
     const group = db.updateGroup(id, data.name)
-    if (group) cloudSync.pushGroup(group).catch((err) => console.warn('[CloudSync] Failed to push group:', err))
+    if (!group) throw new Error('Không tìm thấy nhóm hồ sơ')
+    try {
+      await cloudSync.pushGroup(group)
+    } catch (error) {
+      if (previous) db.updateGroup(previous.id, previous.name)
+      throw ipcError(error, 'Không thể đồng bộ nhóm hồ sơ')
+    }
     return group
   })
   ipcMain.handle('groups:delete', async (_, id: string) => {
     const workspaceId = requireCurrentWorkspaceId()
     const currentMember = await workspaces.getCurrentWorkspaceMember(workspaceId)
     if (!(await workspaces.hasPermission('group.delete'))) throw new Error('Permission denied: group.delete')
-    await requireAuthorizedGroupInCurrentWorkspace(id)
+    await requireDeletableGroupInCurrentWorkspace(id)
     console.log('[IPC:deleteProfileGroup] Authorization result:', {
       action: 'deleteProfileGroup',
       workspaceId,
@@ -253,14 +286,26 @@ app.whenReady().then(() => {
     if (!(await workspaces.hasPermission('profile.create'))) throw new Error('Permission denied: profile.create')
     if (data.groupId) await requireAuthorizedGroupInCurrentWorkspace(data.groupId)
     const profile = db.createProfile({ ...data, workspaceId: requireCurrentWorkspaceId() }, workspaces.getCurrentWorkspaceId())
-    cloudSync.pushProfile(profile).catch((err) => console.warn('[CloudSync] Failed to push profile:', err))
-    return profile
+    try {
+      await cloudSync.pushProfile(profile)
+      return profile
+    } catch (error) {
+      db.deleteProfile(profile.id)
+      throw ipcError(error, 'Không thể đồng bộ hồ sơ')
+    }
   })
   ipcMain.handle('profiles:update', async (_, id: string, data: Partial<Profile>) => {
     if (!(await workspaces.hasPermission('profile.edit'))) throw new Error('Permission denied: profile.edit')
     await requireAuthorizedProfileInCurrentWorkspace(id)
+    const previous = db.getProfiles(requireCurrentWorkspaceId()).find((profile) => profile.id === id)
     const profile = db.updateProfile(id, { ...data, workspaceId: requireCurrentWorkspaceId() })
-    if (profile) cloudSync.pushProfile(profile).catch((err) => console.warn('[CloudSync] Failed to push profile:', err))
+    if (!profile) throw new Error('Không tìm thấy hồ sơ')
+    try {
+      await cloudSync.pushProfile(profile)
+    } catch (error) {
+      if (previous) db.updateProfile(previous.id, previous)
+      throw ipcError(error, 'Không thể đồng bộ hồ sơ')
+    }
     return profile
   })
   ipcMain.handle('profiles:delete', async (_, id: string) => {
@@ -319,7 +364,13 @@ app.whenReady().then(() => {
     if (!(await workspaces.hasPermission('profile.clone'))) throw new Error('Permission denied: profile.clone')
     await requireAuthorizedProfileInCurrentWorkspace(id)
     const profile = db.duplicateProfile(id)
-    if (profile) cloudSync.pushProfile(profile).catch((err) => console.warn('[CloudSync] Failed to push profile:', err))
+    if (!profile) throw new Error('Không tìm thấy hồ sơ')
+    try {
+      await cloudSync.pushProfile(profile)
+    } catch (error) {
+      db.deleteProfile(profile.id)
+      throw ipcError(error, 'Không thể đồng bộ hồ sơ')
+    }
     return profile
   })
   ipcMain.handle('profiles:export', async (_, ids: string[]) => {
@@ -334,8 +385,11 @@ app.whenReady().then(() => {
       if (profile.groupId) await requireAuthorizedGroupInCurrentWorkspace(profile.groupId)
     }
     const profiles = db.importProfiles(jsonData, requireCurrentWorkspaceId())
-    for (const profile of profiles) {
-      cloudSync.pushProfile(profile).catch((err) => console.warn('[CloudSync] Failed to push imported profile:', err))
+    try {
+      await Promise.all(profiles.map((profile) => cloudSync.pushProfile(profile)))
+    } catch (error) {
+      db.deleteProfiles(profiles.map((profile) => profile.id))
+      throw ipcError(error, 'Không thể đồng bộ hồ sơ đã import')
     }
     return profiles
   })
@@ -350,9 +404,13 @@ app.whenReady().then(() => {
     await requireAuthorizedProfileInCurrentWorkspace(profileId)
     return browser.closeProfile(profileId)
   })
-  ipcMain.handle('browser:running', () => browser.getRunningProfiles())
+  ipcMain.handle('browser:running', async () => {
+    const profiles = await getAuthorizedProfilesInCurrentWorkspace()
+    const allowedProfileIds = new Set(profiles.map((profile) => profile.id))
+    return browser.getRunningProfiles().filter((profileId) => allowedProfileIds.has(profileId))
+  })
   ipcMain.handle('browser:sync', async () => {
-    const profiles = await workspaces.filterAuthorizedProfiles(db.getProfiles(requireCurrentWorkspaceId()))
+    const profiles = await getAuthorizedProfilesInCurrentWorkspace()
     const profileIds = profiles.map(p => p.id)
     return browser.syncRunningProfiles(profileIds)
   })
@@ -370,22 +428,40 @@ app.whenReady().then(() => {
   ipcMain.handle('cookies:set', async (_, profileId: string, cookie: Cookie) => {
     if (!(await workspaces.hasPermission('profile.edit'))) throw new Error('Permission denied: profile.edit')
     await requireAuthorizedProfileInCurrentWorkspace(profileId)
+    const previous = cookies.getCookies(profileId)
     cookies.setCookie(profileId, cookie)
     const updated = cookies.getCookies(profileId)
-    cloudSync.pushCookies(profileId, updated).catch((err) => console.warn('[CloudSync] Failed to push cookies:', err))
+    try {
+      await cloudSync.pushCookies(profileId, updated)
+    } catch (error) {
+      cookies.replaceCookies(profileId, previous)
+      throw ipcError(error, 'Không thể đồng bộ cookie')
+    }
   })
   ipcMain.handle('cookies:delete', async (_, profileId: string, domain: string, name: string) => {
     if (!(await workspaces.hasPermission('profile.edit'))) throw new Error('Permission denied: profile.edit')
     await requireAuthorizedProfileInCurrentWorkspace(profileId)
+    const previous = cookies.getCookies(profileId)
     cookies.deleteCookie(profileId, domain, name)
     const updated = cookies.getCookies(profileId)
-    cloudSync.pushCookies(profileId, updated).catch((err) => console.warn('[CloudSync] Failed to push cookies:', err))
+    try {
+      await cloudSync.pushCookies(profileId, updated)
+    } catch (error) {
+      cookies.replaceCookies(profileId, previous)
+      throw ipcError(error, 'Không thể đồng bộ cookie')
+    }
   })
   ipcMain.handle('cookies:clear', async (_, profileId: string) => {
     if (!(await workspaces.hasPermission('profile.edit'))) throw new Error('Permission denied: profile.edit')
     await requireAuthorizedProfileInCurrentWorkspace(profileId)
+    const previous = cookies.getCookies(profileId)
     cookies.clearCookies(profileId)
-    cloudSync.deleteCookies(profileId).catch((err) => console.warn('[CloudSync] Failed to clear cloud cookies:', err))
+    try {
+      await cloudSync.deleteCookies(profileId)
+    } catch (error) {
+      cookies.replaceCookies(profileId, previous)
+      throw ipcError(error, 'Không thể đồng bộ cookie')
+    }
   })
 
   ipcMain.handle('cookies:import', async (_, profileId: string) => {
@@ -397,8 +473,14 @@ app.whenReady().then(() => {
       properties: ['openFile']
     })
     if (result.canceled || !result.filePaths[0]) return null
+    const previous = cookies.getCookies(profileId)
     const imported = cookies.importCookies(profileId, result.filePaths[0])
-    cloudSync.pushCookies(profileId, imported).catch((err) => console.warn('[CloudSync] Failed to push imported cookies:', err))
+    try {
+      await cloudSync.pushCookies(profileId, imported)
+    } catch (error) {
+      cookies.replaceCookies(profileId, previous)
+      throw ipcError(error, 'Không thể đồng bộ cookie')
+    }
     return imported
   })
 
@@ -418,9 +500,15 @@ app.whenReady().then(() => {
   ipcMain.handle('cookies:sync', async (_, profileId: string, chromeCookies: any[]) => {
     if (!(await workspaces.hasPermission('profile.edit'))) throw new Error('Permission denied: profile.edit')
     await requireAuthorizedProfileInCurrentWorkspace(profileId)
+    const previous = cookies.getCookies(profileId)
     cookies.syncCookiesFromBrowser(profileId, chromeCookies)
     const updated = cookies.getCookies(profileId)
-    cloudSync.pushCookies(profileId, updated).catch((err) => console.warn('[CloudSync] Failed to push synced cookies:', err))
+    try {
+      await cloudSync.pushCookies(profileId, updated)
+    } catch (error) {
+      cookies.replaceCookies(profileId, previous)
+      throw ipcError(error, 'Không thể đồng bộ cookie')
+    }
   })
 
   // ── Template handlers ────────────────────────────────────────────────────
@@ -467,7 +555,9 @@ app.whenReady().then(() => {
   ipcMain.handle('scripts:delete', async (_, id: string) => {
     if (!(await workspaces.hasPermission('automation.delete'))) throw new Error('Permission denied: automation.delete')
     requireScriptInCurrentWorkspace(id)
-    return scripts.deleteScript(id, requireCurrentWorkspaceId())
+    const deleted = scripts.deleteScript(id, requireCurrentWorkspaceId())
+    if (!deleted) throw new Error('Không tìm thấy script hoặc không có quyền xóa')
+    return deleted
   })
   ipcMain.handle('scripts:run', async (_, scriptId: string, profile: Profile) => {
     if (!(await workspaces.hasPermission('automation.run'))) return { success: false, error: 'Permission denied: automation.run' }
@@ -483,9 +573,19 @@ app.whenReady().then(() => {
   })
 
   // ── History handlers ─────────────────────────────────────────────────────
-  ipcMain.handle('history:getAll', () => history.getHistory())
-  ipcMain.handle('history:delete', (_, id: string) => history.deleteHistoryRecord(id))
-  ipcMain.handle('history:clear', () => history.clearHistory())
+  ipcMain.handle('history:getAll', async () => {
+    const scope = await getHistoryScope()
+    return history.getHistory(scope.workspaceId, scope.allowedProfileIds)
+  })
+  ipcMain.handle('history:delete', async (_, id: string) => {
+    const scope = await getHistoryScope()
+    const deleted = history.deleteHistoryRecord(id, scope.workspaceId, scope.allowedProfileIds)
+    if (!deleted) throw new Error('History record not found or not authorized')
+  })
+  ipcMain.handle('history:clear', async () => {
+    const scope = await getHistoryScope()
+    return history.clearHistory(scope.workspaceId, scope.allowedProfileIds)
+  })
 
   // ── Scheduler handlers ───────────────────────────────────────────────────
   ipcMain.handle('scheduler:getAll', async () => {
@@ -502,25 +602,40 @@ app.whenReady().then(() => {
   })
   ipcMain.handle('scheduler:update', async (_, id: string, data: Parameters<typeof scheduler.updateScheduledTask>[1]) => {
     if (!(await workspaces.hasPermission('automation.edit'))) throw new Error('Permission denied: automation.edit')
+    const existing = scheduler.getScheduledTasks(requireCurrentWorkspaceId()).find((task) => task.id === id)
+    if (!existing) throw new Error('Không tìm thấy lịch chạy hoặc không có quyền cập nhật')
     if (data.scriptId) requireScriptInCurrentWorkspace(data.scriptId)
     if (data.profileIds) await Promise.all(data.profileIds.map(requireAuthorizedProfileInCurrentWorkspace))
-    return scheduler.updateScheduledTask(id, data, requireCurrentWorkspaceId())
+    const updated = scheduler.updateScheduledTask(id, data, requireCurrentWorkspaceId())
+    if (!updated) throw new Error('Không tìm thấy lịch chạy hoặc không có quyền cập nhật')
+    return updated
   })
   ipcMain.handle('scheduler:toggle', async (_, id: string, enabled: boolean) => {
     if (!(await workspaces.hasPermission('automation.edit'))) throw new Error('Permission denied: automation.edit')
-    return scheduler.toggleScheduledTask(id, enabled, requireCurrentWorkspaceId())
+    const updated = scheduler.toggleScheduledTask(id, enabled, requireCurrentWorkspaceId())
+    if (!updated) throw new Error('Không tìm thấy lịch chạy hoặc không có quyền cập nhật')
+    return updated
   })
   ipcMain.handle('scheduler:delete', async (_, id: string) => {
     if (!(await workspaces.hasPermission('automation.delete'))) throw new Error('Permission denied: automation.delete')
-    return scheduler.deleteScheduledTask(id, requireCurrentWorkspaceId())
+    const deleted = scheduler.deleteScheduledTask(id, requireCurrentWorkspaceId())
+    if (!deleted) throw new Error('Không tìm thấy lịch chạy hoặc không có quyền xóa')
+    return deleted
   })
 
   // ── Profile variable handlers ────────────────────────────────────────────
   ipcMain.handle('profiles:setVariables', async (_, profileId: string, variables: Record<string, string>) => {
     if (!(await workspaces.hasPermission('profile.edit'))) throw new Error('Permission denied: profile.edit')
     await requireAuthorizedProfileInCurrentWorkspace(profileId)
+    const previous = db.getProfiles(requireCurrentWorkspaceId()).find((profile) => profile.id === profileId)
     const profile = db.updateProfile(profileId, { variables })
-    if (profile) cloudSync.pushProfile(profile).catch((err) => console.warn('[CloudSync] Failed to push profile variables:', err))
+    if (!profile) throw new Error('Không tìm thấy hồ sơ')
+    try {
+      await cloudSync.pushProfile(profile)
+    } catch (error) {
+      if (previous) db.updateProfile(previous.id, previous)
+      throw ipcError(error, 'Không thể đồng bộ biến hồ sơ')
+    }
     return profile
   })
 
@@ -558,7 +673,8 @@ app.whenReady().then(() => {
   ipcMain.handle('user:getStats', async () => {
     const profiles = await workspaces.filterAuthorizedProfiles(db.getProfiles(workspaces.getCurrentWorkspaceId()))
     const allScripts = await scripts.getScripts(workspaces.getCurrentWorkspaceId())
-    const historyRecords = await history.getHistory()
+    const historyScope = await getHistoryScope()
+    const historyRecords = await history.getHistory(historyScope.workspaceId, historyScope.allowedProfileIds)
     const allowedProfileIds = new Set(profiles.map((profile) => profile.id))
     const tasks = scheduler.getScheduledTasks(workspaces.getCurrentWorkspaceId()).filter((task) =>
       task.profileIds.every((profileId) => allowedProfileIds.has(profileId))
@@ -730,14 +846,19 @@ app.whenReady().then(() => {
   ipcMain.handle('workspaces:hasPermission', (_, permissionKey: any, workspaceId?: string) => workspaces.hasPermission(permissionKey, workspaceId))
   ipcMain.handle('workspaces:getUserGroups', (_, workspaceId: string) => workspaces.getWorkspaceUserGroups(workspaceId))
   ipcMain.handle('workspaces:createUserGroup', (_, input: any) => workspaces.createWorkspaceUserGroup(input))
-  ipcMain.handle('workspaces:updateUserGroup', (_, id: string, name: string, description?: string) => workspaces.updateWorkspaceUserGroup(id, name, description))
+  ipcMain.handle('workspaces:updateUserGroup', (_, id: string, name: string, description?: string, permissionOverrides?: any) =>
+    workspaces.updateWorkspaceUserGroup(id, name, description, permissionOverrides)
+  )
   ipcMain.handle('workspaces:deleteUserGroup', (_, id: string) => workspaces.deleteWorkspaceUserGroup(id))
   ipcMain.handle('workspaces:ensureDefaultWorkspace', () => workspaces.ensureDefaultWorkspace())
   ipcMain.handle('workspaces:deleteWorkspace', (_, workspaceId: string) => workspaces.deleteWorkspace(workspaceId))
   ipcMain.handle('workspaces:updateWorkspace', (_, workspaceId: string, updates: any) => workspaces.updateWorkspace(workspaceId, updates))
   ipcMain.handle('workspaces:updateWorkspaceSettings', (_, workspaceId: string, settings: any) => workspaces.updateWorkspaceSettings(workspaceId, settings))
 
-  scheduler.startScheduler(() => db.getProfiles(workspaces.getCurrentWorkspaceId()))
+  scheduler.startScheduler({
+    getProfiles: (workspaceId) => db.getProfiles(workspaceId),
+    authorizeProfileRun: (workspaceId, profile) => workspaces.assertAutomationProfileRunAuthorized(workspaceId, profile),
+  })
 
   createWindow()
 

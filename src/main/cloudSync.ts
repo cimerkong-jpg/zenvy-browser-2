@@ -1,6 +1,6 @@
 import { getSupabase, isSupabaseConfigured } from './supabase'
 import { getCurrentUser } from './auth'
-import { getCurrentWorkspaceId, hasPermission } from './workspaces'
+import { getCurrentWorkspaceId } from './workspaces'
 import * as db from './db'
 import * as cookiesStore from './cookies'
 import type { Group, Profile } from '../shared/types'
@@ -278,8 +278,17 @@ export async function syncGroupsAndProfiles(force = false): Promise<void> {
 export async function pushGroup(group: Group): Promise<void> {
   const userId = await getUserId()
   const workspaceId = getCurrentWorkspaceId()
-  if (!userId || !workspaceId || !isUuid(group.id) || !(await hasPermission('group.create', workspaceId))) return
-  await pushGroups([group], userId, workspaceId)
+  if (!userId || !workspaceId || !isUuid(group.id)) {
+    throw new Error('Không thể đồng bộ nhóm hồ sơ lên Supabase')
+  }
+
+  const { error } = await getSupabase()
+    .from('groups')
+    .upsert(toCloudGroup(group, userId, group.workspaceId ?? workspaceId), { onConflict: 'id' })
+    .select('id')
+    .single()
+
+  if (error) throw error
 }
 
 export async function deleteGroup(groupId: string): Promise<CloudGroup> {
@@ -304,8 +313,17 @@ export async function deleteGroup(groupId: string): Promise<CloudGroup> {
 export async function pushProfile(profile: Profile): Promise<void> {
   const userId = await getUserId()
   const workspaceId = getCurrentWorkspaceId()
-  if (!userId || !workspaceId || !isUuid(profile.id)) return
-  await pushProfiles([profile], userId, workspaceId)
+  if (!userId || !workspaceId || !isUuid(profile.id)) {
+    throw new Error('Không thể đồng bộ hồ sơ lên Supabase')
+  }
+
+  const { error } = await getSupabase()
+    .from('profiles')
+    .upsert(toCloudProfile(profile, userId, profile.workspaceId ?? workspaceId), { onConflict: 'id' })
+    .select('id')
+    .single()
+
+  if (error) throw error
 }
 
 export async function deleteProfile(profileId: string): Promise<CloudProfile> {
@@ -370,7 +388,9 @@ export async function pullCookies(profileId: string): Promise<Cookie[]> {
 
 export async function pushCookies(profileId: string, cookies: Cookie[]): Promise<void> {
   const userId = await getUserId()
-  if (!userId || !isUuid(profileId)) return
+  if (!userId || !isUuid(profileId)) {
+    throw new Error('Không thể đồng bộ cookie lên Supabase')
+  }
 
   const row = {
     profile_id: profileId,

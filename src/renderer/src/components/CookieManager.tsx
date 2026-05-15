@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react'
 import { dialog } from '../store/useDialog'
+import { toast } from '../store/useToast'
 
 interface Cookie {
   domain: string
@@ -34,9 +35,13 @@ export default function CookieManager({ profileId, onClose }: Props) {
   }
 
   const handleImport = async () => {
-    const result = await window.api.cookies.import(profileId)
-    if (result) {
-      setCookies(result)
+    try {
+      const result = await window.api.cookies.import(profileId)
+      if (result) {
+        setCookies(result)
+      }
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : 'Không thể import cookie')
     }
   }
 
@@ -45,8 +50,12 @@ export default function CookieManager({ profileId, onClose }: Props) {
   }
 
   const handleDelete = async (domain: string, name: string) => {
-    await window.api.cookies.delete(profileId, domain, name)
-    await loadCookies()
+    try {
+      await window.api.cookies.delete(profileId, domain, name)
+      await loadCookies()
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : 'Không thể xóa cookie')
+    }
   }
 
   const handleClear = async () => {
@@ -56,8 +65,12 @@ export default function CookieManager({ profileId, onClose }: Props) {
     )
 
     if (confirmed) {
-      await window.api.cookies.clear(profileId)
-      setCookies([])
+      try {
+        await window.api.cookies.clear(profileId)
+        await loadCookies()
+      } catch (error) {
+        toast.error(error instanceof Error ? error.message : 'Không thể xóa cookie')
+      }
     }
   }
 

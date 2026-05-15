@@ -138,6 +138,7 @@ export interface ScheduledTask {
 
 export interface TaskHistoryRecord {
   id: string
+  workspaceId: string | null
   scriptId: string
   scriptName: string
   profileId: string

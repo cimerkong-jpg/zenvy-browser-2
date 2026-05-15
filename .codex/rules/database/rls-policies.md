@@ -15,7 +15,14 @@ Define Row Level Security (RLS) policies that enforce authorization at the datab
 - Owner bypass MUST be explicit in policies
 - Policies MUST check `workspace_members.status = 'active'`
 
-### 3. Avoid Recursion
+### 3. Mutations Require Action Permission
+- DELETE/UPDATE policies MUST enforce both visibility/authorization scope and the specific action permission.
+- A member who can read or open a profile/group must still be blocked from DELETE unless their role permission grants `profile.delete` or `group.delete`.
+- App IPC checks are not enough; direct Supabase calls with an authenticated user session must also be blocked by RLS.
+- RLS permission resolution must match backend precedence: `workspace_user_groups.permission_overrides` overrides role permissions; owner is the only bypass.
+- `workspace_user_groups.description` is not a permission source.
+
+### 4. Avoid Recursion
 - Policies referencing `workspace_members` can cause infinite recursion
 - Use CTEs or separate policy tables when needed
 - Test policies thoroughly before deployment
@@ -63,6 +70,16 @@ CREATE POLICY "policy_name"
 ON table_name FOR INSERT
 WITH CHECK (
   (SELECT get_my_permissions(workspace_id))->>'permission.key' = 'true'
+);
+```
+
+### Pattern 4: Scoped Delete With Action Permission
+```sql
+-- DELETE needs both resource authorization and action permission.
+CREATE POLICY "profiles_delete_by_authorization"
+ON profiles FOR DELETE
+USING (
+  user_can_delete_profile_row(workspace_id, id::text, group_id::text)
 );
 ```
 
@@ -193,6 +210,11 @@ USING (
 - [ ] Policies don't cause recursion errors
 - [ ] Policies don't cause performance issues
 - [ ] INSERT/UPDATE/DELETE policies are consistent with SELECT
+- [ ] DELETE/UPDATE policies deny users who have read/access scope but lack the action permission
+- [ ] Direct Supabase DELETE as authenticated non-owner fails when `profile.delete` or `group.delete` is false
+- [ ] User Group permission overrides and direct Supabase DELETE behavior match backend `hasPermission()`
+- [ ] `workspace_user_groups.permission_overrides` is the only User Group override source used by RLS
+- [ ] In `permissionMode=profile`, a non-owner cannot delete a group that contains any unauthorized profile
 
 ### Test Queries
 ```sql
@@ -206,6 +228,12 @@ SELECT * FROM profiles;
 -- Reset
 RESET role;
 ```
+
+## Changelog
+- 2026-05-14: Added invariant that profile/group DELETE RLS must check action permission as well as workspace, user group, and profile authorization scope.
+- 2026-05-15: Required RLS DELETE helpers to honor User Group permission overrides and tightened profile-mode group delete to require authorization for every profile inside the group.
+- 2026-05-15: Moved User Group override source of truth to `workspace_user_groups.permission_overrides jsonb`; legacy description parsing is transitional only.
+- 2026-05-15: Removed legacy description parsing from RLS after migration verification.
 
 ## Deployment Workflow
 

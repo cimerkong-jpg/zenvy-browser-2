@@ -93,6 +93,7 @@ export interface WorkspaceUserGroup {
   workspaceId: string
   name: string
   description: string
+  permissionOverrides: RolePermissionMap | null
   createdBy: string | null
   createdAt: number
   updatedAt: number
@@ -129,6 +130,7 @@ export interface CreateWorkspaceUserGroupInput {
   workspaceId: string
   name: string
   description?: string
+  permissionOverrides?: RolePermissionMap | null
 }
 
 export interface UpdateWorkspaceMemberInput {

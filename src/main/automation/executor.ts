@@ -205,6 +205,7 @@ export async function runScript(script: AutomationScript, profile: Profile): Pro
     // Persist to history
     if (execution.finishedAt) {
       addHistoryRecord({
+        workspaceId: script.workspaceId ?? profile.workspaceId ?? null,
         scriptId: execution.scriptId,
         scriptName: execution.scriptName,
         profileId: execution.profileId,

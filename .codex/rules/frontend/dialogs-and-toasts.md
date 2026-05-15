@@ -44,6 +44,7 @@ const confirmed = await dialog.confirmDelete('title', 'message')
 - No exceptions for "quick fixes" or "temporary code"
 - Success toasts for delete/update mutations must only appear after backend confirmation and store/UI refresh.
 - Do not show optimistic success for destructive actions.
+- No mutation may report success unless the intended persistence layer confirmed the change.
 
 ## Why Native Dialogs Are Forbidden
 
@@ -217,6 +218,8 @@ When adding user interactions:
 - [ ] Use `toast.success/error/info/warning()` for feedback
 - [ ] Success toast only after backend-confirmed mutation
 - [ ] Delete/update flows refresh data before success toast
+- [ ] Cloud-backed mutations do not show normal success when Supabase persistence failed
+- [ ] Local-first mutations return an explicit pending/failed sync state before any success copy
 - [ ] Destructive actions use `confirmDelete()` variant
 - [ ] Vietnamese copy for messages
 - [ ] Error messages are user-friendly
@@ -322,3 +325,4 @@ When replacing native dialogs (for future reference):
 
 ## Changelog
 - 2026-05-14: Added backend-confirmed success rule for delete/update mutations.
+- 2026-05-15: Added persistence-confirmed mutation invariant for cloud-backed and local-first flows.

@@ -96,8 +96,8 @@ interface WorkspaceState {
   getRolePermissions: () => Promise<Record<WorkspaceRole, RolePermissionMap>>
   updateRolePermissions: (role: WorkspaceRole, permissions: RolePermissionMap) => Promise<void>
   hasPermission: (permissionKey: PermissionKey) => boolean
-  createUserGroup: (name: string, description?: string) => Promise<WorkspaceUserGroup>
-  updateUserGroup: (id: string, name: string, description?: string) => Promise<void>
+  createUserGroup: (name: string, description?: string, permissionOverrides?: RolePermissionMap | null) => Promise<WorkspaceUserGroup>
+  updateUserGroup: (id: string, name: string, description?: string, permissionOverrides?: RolePermissionMap | null) => Promise<void>
   deleteUserGroup: (id: string) => Promise<void>
   reset: () => void
 }
@@ -304,11 +304,9 @@ export const useWorkspace = create<WorkspaceState>()(
           // Refresh workspace list to get updated data
           await get().loadWorkspaces()
 
-          toast.success('Workspace updated successfully')
         } catch (error) {
           const normalized = readableError(error, 'Failed to update workspace')
           set({ error: normalized.message })
-          toast.error(normalized.message)
           throw normalized
         }
       },
@@ -488,20 +486,20 @@ export const useWorkspace = create<WorkspaceState>()(
         await Promise.all([get().getMyPermissions(), get().getRolePermissions()])
       },
 
-      createUserGroup: async (name, description) => {
+      createUserGroup: async (name, description, permissionOverrides) => {
         const workspaceId = get().currentWorkspaceId
         if (!workspaceId) throw new Error('No workspace selected')
         const api = getWorkspaceApi()
         if (!api?.createUserGroup) throw reportMissingWorkspaceApi('createUserGroup')
-        const group = await api.createUserGroup({ workspaceId, name, description })
+        const group = await api.createUserGroup({ workspaceId, name, description, permissionOverrides })
         await get().loadUserGroups()
         return group
       },
 
-      updateUserGroup: async (id, name, description) => {
+      updateUserGroup: async (id, name, description, permissionOverrides) => {
         const api = getWorkspaceApi()
         if (!api?.updateUserGroup) throw reportMissingWorkspaceApi('updateUserGroup')
-        await api.updateUserGroup(id, name, description)
+        await api.updateUserGroup(id, name, description, permissionOverrides)
         await get().loadUserGroups()
       },
 

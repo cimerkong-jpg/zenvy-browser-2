@@ -59,9 +59,12 @@ export function updateScript(id: string, data: Partial<Pick<AutomationScript, 'n
   return scripts[idx]
 }
 
-export function deleteScript(id: string, workspaceId?: string | null): void {
+export function deleteScript(id: string, workspaceId?: string | null): AutomationScript | null {
   const scripts = readScripts()
-  writeScripts(scripts.filter((s) => !(s.id === id && (!workspaceId || s.workspaceId === workspaceId))))
+  const script = scripts.find((s) => s.id === id && (!workspaceId || s.workspaceId === workspaceId)) ?? null
+  if (!script) return null
+  writeScripts(scripts.filter((s) => s.id !== script.id))
+  return script
 }
 
 export function getScript(id: string, workspaceId?: string | null): AutomationScript | null {

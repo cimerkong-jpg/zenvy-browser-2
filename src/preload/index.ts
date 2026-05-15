@@ -157,7 +157,8 @@ const api = {
     hasPermission: (permissionKey: PermissionKey, workspaceId?: string): Promise<boolean> => ipcRenderer.invoke('workspaces:hasPermission', permissionKey, workspaceId),
     getUserGroups: (workspaceId: string): Promise<WorkspaceUserGroup[]> => ipcRenderer.invoke('workspaces:getUserGroups', workspaceId),
     createUserGroup: (input: CreateWorkspaceUserGroupInput): Promise<WorkspaceUserGroup> => ipcRenderer.invoke('workspaces:createUserGroup', input),
-    updateUserGroup: (id: string, name: string, description?: string): Promise<WorkspaceUserGroup> => ipcRenderer.invoke('workspaces:updateUserGroup', id, name, description),
+    updateUserGroup: (id: string, name: string, description?: string, permissionOverrides?: RolePermissionMap | null): Promise<WorkspaceUserGroup> =>
+      ipcRenderer.invoke('workspaces:updateUserGroup', id, name, description, permissionOverrides),
     deleteUserGroup: (id: string): Promise<void> => ipcRenderer.invoke('workspaces:deleteUserGroup', id),
     ensureDefaultWorkspace: (): Promise<WorkspaceWithStats> => ipcRenderer.invoke('workspaces:ensureDefaultWorkspace'),
     deleteWorkspace: (workspaceId: string): Promise<{ success: true; switchedToWorkspaceId: string | null }> => ipcRenderer.invoke('workspaces:deleteWorkspace', workspaceId),

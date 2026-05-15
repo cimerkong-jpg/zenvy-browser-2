@@ -55,30 +55,8 @@ const groupPermissionLabels: Partial<Record<PermissionKey, string>> = {
   'automation.run': 'Chạy quy trình',
 }
 
-const groupDescriptionMetaPrefix = '__ZENVY_GROUP_META__:'
-
 function emptyGroupPermissionMap(): RolePermissionMap {
   return Object.fromEntries(PermissionKeys.map((key) => [key, false])) as RolePermissionMap
-}
-
-function parseGroupDescription(raw: string) {
-  if (!raw.startsWith(groupDescriptionMetaPrefix)) {
-    return { note: raw, permissions: emptyGroupPermissionMap() }
-  }
-
-  try {
-    const parsed = JSON.parse(raw.slice(groupDescriptionMetaPrefix.length)) as { note?: string; permissions?: Partial<RolePermissionMap> }
-    return {
-      note: parsed.note ?? '',
-      permissions: { ...emptyGroupPermissionMap(), ...(parsed.permissions ?? {}) },
-    }
-  } catch {
-    return { note: raw, permissions: emptyGroupPermissionMap() }
-  }
-}
-
-function serializeGroupDescription(note: string, permissions: RolePermissionMap) {
-  return `${groupDescriptionMetaPrefix}${JSON.stringify({ note, permissions })}`
 }
 
 function getInitials(email: string, name?: string | null): string {
@@ -412,8 +390,8 @@ export default function MembersPage() {
       {showGroupModal && canManageUserGroups && (
         <GroupModal
           onClose={() => setShowGroupModal(false)}
-          onSave={async (name, description) => {
-            const group = await createUserGroup(name, description)
+          onSave={async (name, description, permissionOverrides) => {
+            const group = await createUserGroup(name, description, permissionOverrides)
             setSelectedGroup(group.id)
             setShowGroupModal(false)
             toast.success('Đã tạo nhóm người dùng')
@@ -424,8 +402,8 @@ export default function MembersPage() {
         <GroupModal
           group={editingGroup}
           onClose={() => setEditingGroup(null)}
-          onSave={async (name, description) => {
-            await updateUserGroup(editingGroup.id, name, description)
+          onSave={async (name, description, permissionOverrides) => {
+            await updateUserGroup(editingGroup.id, name, description, permissionOverrides)
             setEditingGroup(null)
             toast.success('Đã cập nhật nhóm')
           }}
@@ -1267,11 +1245,18 @@ function RoleRadio({ label, value, role, onChange }: { label: string; value: Exc
   )
 }
 
-function GroupModal({ group, onClose, onSave }: { group?: WorkspaceUserGroup; onClose: () => void; onSave: (name: string, description: string) => Promise<void> }) {
-  const initial = parseGroupDescription(group?.description ?? '')
+function GroupModal({
+  group,
+  onClose,
+  onSave,
+}: {
+  group?: WorkspaceUserGroup
+  onClose: () => void
+  onSave: (name: string, description: string, permissionOverrides: RolePermissionMap) => Promise<void>
+}) {
   const [name, setName] = useState(group?.name ?? '')
-  const [note, setNote] = useState(initial.note)
-  const [draftPermissions, setDraftPermissions] = useState<RolePermissionMap>(initial.permissions)
+  const [note, setNote] = useState(group?.description ?? '')
+  const [draftPermissions, setDraftPermissions] = useState<RolePermissionMap>(group?.permissionOverrides ?? emptyGroupPermissionMap())
   const [selectedCategory, setSelectedCategory] = useState<GroupPermissionCategory>('profiles')
   const [loading, setLoading] = useState(false)
   const activeCategory = groupPermissionCategories.find((item) => item.key === selectedCategory) ?? groupPermissionCategories[0]
@@ -1297,7 +1282,7 @@ function GroupModal({ group, onClose, onSave }: { group?: WorkspaceUserGroup; on
           if (!name.trim()) return
           setLoading(true)
           try {
-            await onSave(name.trim(), serializeGroupDescription(note.trim(), draftPermissions))
+            await onSave(name.trim(), note.trim(), draftPermissions)
           } finally {
             setLoading(false)
           }

@@ -112,12 +112,23 @@ Don't elaborate on internal process unless user asks.
 - `.codex/rules/database/`: database, RLS, and migration rules
 - `.codex/rules/backend/`: Electron main process and IPC rules
 - `.codex/rules/frontend/`: React, Zustand, and UI rules
+- `.codex/maps/`: tester-oriented function maps and data-flow maps
+- `.codex/agents/`: repeatable audit and QA workflows
 - `.codex/roles/`: specialized modes by role
 - `.codex/workflows/`: execution processes by work type
 - `.codex/skills/`: reusable capabilities combining rules, roles, workflows, checklists
 - `.codex/checklists/`: pre-completion checklists
 - `.codex/memory.md`: stable user/workspace preferences
 - `.codex/local.md`: local machine notes (no secrets)
+
+## Function Maps
+Function maps live in `.codex/maps`.
+The main testing map is `.codex/maps/app-function-map.md`.
+
+## Agents
+Repeatable audit workflows live in `.codex/agents`.
+Start with `.codex/agents/README.md`.
+Agents do not replace rules. Rules define invariants; agents execute audit and testing workflows.
 
 ## Domain-Specific Rules
 Read these before modifying related code:
@@ -151,6 +162,17 @@ You MUST:
 2. Update testing checklists
 3. Update migration notes if architecture changed
 4. Document new invariants or constraints
+
+## Agents
+
+Repeatable audit workflows live in `.codex/agents/`.
+Start with `.codex/agents/README.md`.
+
+**Agents do not replace rules.**
+- Rules define invariants
+- Agents execute audit workflows
+
+When asked to "run an agent", read that agent file and execute its workflow exactly.
 
 ## Current Focus
 - Workspace collaboration features

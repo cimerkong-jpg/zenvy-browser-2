@@ -5,6 +5,7 @@ import { randomBytes } from 'crypto'
 import type { ScheduledTask, Profile } from '../../shared/types'
 import { getScript } from './scripts'
 import { runScript } from './executor'
+import { addHistoryRecord } from './history'
 
 function uuidv4(): string {
   return randomBytes(16).toString('hex').replace(/(.{8})(.{4})(.{4})(.{4})(.{12})/, '$1-$2-$3-$4-$5')
@@ -35,18 +36,45 @@ function writeTasks(tasks: ScheduledTask[]): void {
 const timers = new Map<string, NodeJS.Timeout>()
 
 // Callback to get all profiles from db (injected at startup)
-let getProfilesFn: (() => Profile[]) | null = null
+type SchedulerRuntime = {
+  getProfiles: (workspaceId: string) => Profile[]
+  authorizeProfileRun: (workspaceId: string, profile: Profile) => Promise<void>
+}
 
-function executeTask(task: ScheduledTask): void {
-  if (!getProfilesFn) return
+let runtime: SchedulerRuntime | null = null
+
+async function executeTask(task: ScheduledTask): Promise<void> {
+  if (!runtime) return
+  if (!task.workspaceId) {
+    console.warn('[Scheduler] Skipping task without workspaceId:', task.id)
+    return
+  }
+
   const script = getScript(task.scriptId, task.workspaceId)
   if (!script) return
-  const allProfiles = getProfilesFn()
+  const allProfiles = runtime.getProfiles(task.workspaceId)
   const profiles = task.profileIds
     .map((id) => allProfiles.find((p) => p.id === id))
     .filter((p): p is Profile => !!p)
 
   for (const profile of profiles) {
+    try {
+      await runtime.authorizeProfileRun(task.workspaceId, profile)
+    } catch {
+      addHistoryRecord({
+        workspaceId: task.workspaceId,
+        scriptId: task.scriptId,
+        scriptName: task.scriptName,
+        profileId: profile.id,
+        profileName: profile.name,
+        status: 'error',
+        startedAt: Date.now(),
+        finishedAt: Date.now(),
+        error: 'Permission denied: scheduled task profile authorization',
+        logs: []
+      })
+      continue
+    }
     runScript(script, profile).catch(() => {})
   }
 
@@ -73,14 +101,14 @@ function scheduleTask(task: ScheduledTask): void {
     const delay = task.runAt - Date.now()
     if (delay <= 0) return
     const handle = setTimeout(() => {
-      executeTask(task)
+      executeTask(task).catch((error) => console.warn('[Scheduler] Task execution failed:', error))
       timers.delete(task.id)
     }, delay)
     timers.set(task.id, handle)
   } else if (task.type === 'interval' && task.intervalMs && task.intervalMs > 0) {
     const firstDelay = task.nextRunAt ? Math.max(0, task.nextRunAt - Date.now()) : task.intervalMs
     const handle = setTimeout(() => {
-      executeTask(task)
+      executeTask(task).catch((error) => console.warn('[Scheduler] Task execution failed:', error))
       const interval = setInterval(() => {
         const current = readTasks().find((t) => t.id === task.id)
         if (!current || !current.enabled) {
@@ -88,7 +116,7 @@ function scheduleTask(task: ScheduledTask): void {
           timers.delete(task.id)
           return
         }
-        executeTask(current)
+        executeTask(current).catch((error) => console.warn('[Scheduler] Task execution failed:', error))
       }, task.intervalMs)
       timers.set(task.id, interval)
     }, firstDelay)
@@ -105,8 +133,8 @@ function clearTaskTimer(taskId: string): void {
   }
 }
 
-export function startScheduler(getAllProfiles: () => Profile[]): void {
-  getProfilesFn = getAllProfiles
+export function startScheduler(nextRuntime: SchedulerRuntime): void {
+  runtime = nextRuntime
   const tasks = readTasks()
   for (const task of tasks) {
     if (task.enabled) scheduleTask(task)
@@ -115,7 +143,7 @@ export function startScheduler(getAllProfiles: () => Profile[]): void {
 
 export function stopScheduler(): void {
   for (const [id] of timers) clearTaskTimer(id)
-  getProfilesFn = null
+  runtime = null
 }
 
 export function getScheduledTasks(workspaceId?: string | null): ScheduledTask[] {
@@ -173,7 +201,10 @@ export function toggleScheduledTask(id: string, enabled: boolean, workspaceId?: 
   return updateScheduledTask(id, { enabled }, workspaceId)
 }
 
-export function deleteScheduledTask(id: string, workspaceId?: string | null): void {
+export function deleteScheduledTask(id: string, workspaceId?: string | null): ScheduledTask | null {
+  const task = readTasks().find((t) => t.id === id && (!workspaceId || t.workspaceId === workspaceId)) ?? null
+  if (!task) return null
   clearTaskTimer(id)
   writeTasks(readTasks().filter((t) => !(t.id === id && (!workspaceId || t.workspaceId === workspaceId))))
+  return task
 }

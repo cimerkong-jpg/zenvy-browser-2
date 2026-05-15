@@ -20,7 +20,6 @@ import { DefaultRolePermissionMap, PermissionKeys } from '../shared/workspace-ty
 import type { Group, Profile } from '../shared/types'
 
 let currentWorkspaceId: string | null = null
-const groupDescriptionMetaPrefix = '__ZENVY_GROUP_META__:'
 
 export type SwitchWorkspaceResult = {
   success: true
@@ -69,14 +68,9 @@ async function getWorkspaceAuthorizationMode(workspaceId: string): Promise<Autho
   return authorizationModeFromSettings((data as any)?.settings)
 }
 
-function parseGroupPermissions(description: string | null | undefined): RolePermissionMap | null {
-  if (!description?.startsWith(groupDescriptionMetaPrefix)) return null
-  try {
-    const parsed = JSON.parse(description.slice(groupDescriptionMetaPrefix.length)) as { permissions?: Partial<RolePermissionMap> }
-    return { ...emptyPermissionMap(), ...(parsed.permissions ?? {}) }
-  } catch {
-    return null
-  }
+function normalizePermissionOverrides(value: unknown): RolePermissionMap | null {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return null
+  return { ...emptyPermissionMap(), ...(value as Partial<RolePermissionMap>) }
 }
 
 function delay(ms: number): Promise<void> {
@@ -193,6 +187,7 @@ function mapGroup(row: any): WorkspaceUserGroup {
     workspaceId: row.workspace_id,
     name: row.name,
     description: row.description ?? '',
+    permissionOverrides: normalizePermissionOverrides(row.permission_overrides),
     createdBy: row.created_by ?? null,
     createdAt: toMs(row.created_at),
     updatedAt: toMs(row.updated_at),
@@ -613,12 +608,15 @@ export async function updateWorkspace(workspaceId: string, updates: { name?: str
     payload.settings = { ...currentSettings, ...updates.settings }
   }
 
-  const { error } = await getSupabase()
+  const { data, error } = await getSupabase()
     .from('workspaces')
     .update(payload)
     .eq('id', workspaceId)
+    .select('id')
+    .single()
 
   if (error) throw toError(error, 'Failed to update workspace')
+  if (!data?.id) throw new Error('Không thể cập nhật workspace')
 }
 
 export async function updateWorkspaceSettings(workspaceId: string, settings: { permissionMode?: 'group' | 'profile'; automationMode?: 'flowchart' | 'javascript' }): Promise<void> {
@@ -639,12 +637,15 @@ export async function updateWorkspaceSettings(workspaceId: string, settings: { p
   const currentSettings = workspace.settings ?? {}
   const newSettings = { ...currentSettings, ...settings }
 
-  const { error } = await getSupabase()
+  const { data, error } = await getSupabase()
     .from('workspaces')
     .update({ settings: newSettings, updated_at: new Date().toISOString() })
     .eq('id', workspaceId)
+    .select('id')
+    .single()
 
   if (error) throw toError(error, 'Failed to update workspace settings')
+  if (!data?.id) throw new Error('Không thể cập nhật cài đặt workspace')
 }
 
 export async function inviteMember(input: InviteMemberInput): Promise<WorkspaceInvitation> {
@@ -768,7 +769,7 @@ export async function getWorkspaceMembers(workspaceId: string): Promise<Workspac
 async function readWorkspaceMember(memberId: string) {
   const { data, error } = await getSupabase()
     .from('workspace_members')
-    .select('id,workspace_id,user_id,email,role,status,user_group_id')
+    .select('id,workspace_id,user_id,email,role,status,user_group_id,profile_limit,note')
     .eq('id', memberId)
     .single()
   if (error) throw toError(error, 'Failed to read workspace member')
@@ -935,6 +936,30 @@ export async function assertProfileAuthorized(profile: Profile): Promise<void> {
   }
 }
 
+export async function assertAutomationProfileRunAuthorized(workspaceId: string, profile: Profile): Promise<void> {
+  if (!workspaceId) throw new Error('No active workspace')
+  if (profile.workspaceId && profile.workspaceId !== workspaceId) {
+    throw new Error('Profile does not belong to workspace')
+  }
+
+  const member = await requireCurrentWorkspaceMember(workspaceId)
+  if (!(await hasPermission('automation.run', workspaceId))) {
+    throw new Error('Permission denied: automation.run')
+  }
+
+  if (isWorkspaceOwner(member)) return
+
+  const authorizationMode = await getWorkspaceAuthorizationMode(workspaceId)
+  const authorizations = await getMemberAuthorizations(member.id)
+  if (authorizationMode === 'group') {
+    if (profile.groupId && authorizations.groupIds.includes(profile.groupId)) return
+    throw new Error('Permission denied: profile authorization')
+  }
+
+  if (authorizations.profileIds.includes(profile.id)) return
+  throw new Error('Permission denied: profile authorization')
+}
+
 export async function assertGroupAuthorized(group: Group, profiles: Profile[]): Promise<void> {
   const workspaceId = currentWorkspaceId
   if (!workspaceId) throw new Error('No active workspace')
@@ -942,6 +967,35 @@ export async function assertGroupAuthorized(group: Group, profiles: Profile[]): 
   if (!allowed.some((item) => item.id === group.id)) {
     throw new Error('Permission denied: profile group authorization')
   }
+}
+
+export async function assertGroupDeleteAuthorized(group: Group, profiles: Profile[]): Promise<void> {
+  const workspaceId = currentWorkspaceId
+  if (!workspaceId) throw new Error('No active workspace')
+
+  const member = await requireCurrentWorkspaceMember(workspaceId)
+  if (isWorkspaceOwner(member)) return
+
+  const authorizationMode = await getWorkspaceAuthorizationMode(workspaceId)
+  const authorizations = await getMemberAuthorizations(member.id)
+  if (authorizationMode === 'group') {
+    if (authorizations.groupIds.includes(group.id)) return
+    throw new Error('Permission denied: profile group authorization')
+  }
+
+  const profileIdsInGroup = profiles
+    .filter((profile) => profile.groupId === group.id)
+    .map((profile) => profile.id)
+  const allowedProfileIds = new Set(authorizations.profileIds)
+
+  // Profile-mode delete is stricter than visibility: every profile in the group
+  // must be explicitly authorized, otherwise deleting the group can affect data
+  // the member is not allowed to manage.
+  if (profileIdsInGroup.length > 0 && profileIdsInGroup.every((profileId) => allowedProfileIds.has(profileId))) {
+    return
+  }
+
+  throw new Error('Permission denied: profile group delete authorization')
 }
 
 export async function getWorkspaceInvitations(workspaceId: string): Promise<WorkspaceInvitation[]> {
@@ -996,7 +1050,13 @@ export async function createWorkspaceUserGroup(inputOrWorkspaceId: string | Crea
   }
   const { data, error } = await getSupabase()
     .from('workspace_user_groups')
-    .insert({ workspace_id: input.workspaceId, name: input.name, description: input.description ?? '', created_by: user.id })
+    .insert({
+      workspace_id: input.workspaceId,
+      name: input.name,
+      description: input.description ?? '',
+      permission_overrides: input.permissionOverrides ?? null,
+      created_by: user.id,
+    })
     .select('*')
     .single()
 
@@ -1004,7 +1064,12 @@ export async function createWorkspaceUserGroup(inputOrWorkspaceId: string | Crea
   return mapGroup(data)
 }
 
-export async function updateWorkspaceUserGroup(id: string, name: string, description?: string): Promise<WorkspaceUserGroup> {
+export async function updateWorkspaceUserGroup(
+  id: string,
+  name: string,
+  description?: string,
+  permissionOverrides?: RolePermissionMap | null
+): Promise<WorkspaceUserGroup> {
   requireConfigured()
   const { data: existing, error: readError } = await getSupabase()
     .from('workspace_user_groups')
@@ -1016,8 +1081,9 @@ export async function updateWorkspaceUserGroup(id: string, name: string, descrip
   if (!isWorkspaceOwner(currentMember)) {
     throw new Error('Permission denied: only workspace owner can manage user groups')
   }
-  const patch: Record<string, string> = { name }
+  const patch: Record<string, unknown> = { name }
   if (description !== undefined) patch.description = description
+  if (permissionOverrides !== undefined) patch.permission_overrides = permissionOverrides
   const { data, error } = await getSupabase()
     .from('workspace_user_groups')
     .update(patch)
@@ -1267,7 +1333,7 @@ export async function removeMember(memberId: string): Promise<void> {
 
   const { data: member, error: readError } = await getSupabase()
     .from('workspace_members')
-    .select('workspace_id,role,user_group_id')
+    .select('workspace_id,role,user_group_id,profile_limit,note')
     .eq('id', memberId)
     .single()
 
@@ -1332,7 +1398,7 @@ export async function updateMember(memberId: string, input: UpdateWorkspaceMembe
 
   const { data: member, error: readError } = await getSupabase()
     .from('workspace_members')
-    .select('workspace_id,role,user_group_id')
+    .select('id,workspace_id,user_id,email,role,status,user_group_id,profile_limit,note,updated_at')
     .eq('id', memberId)
     .single()
 
@@ -1362,6 +1428,9 @@ export async function updateMember(memberId: string, input: UpdateWorkspaceMembe
     if (!group) throw new Error('Nhóm người dùng không tồn tại hoặc không thuộc workspace này')
   }
 
+  const shouldUpdateAuthorizations = 'profileIds' in input || 'groupIds' in input
+  const previousAuthorizations = shouldUpdateAuthorizations ? await getMemberAuthorizations(memberId) : null
+
   const patch: Record<string, unknown> = {}
   if (input.role) {
     if (input.role === 'owner') throw new Error('Cannot assign owner role')
@@ -1370,7 +1439,7 @@ export async function updateMember(memberId: string, input: UpdateWorkspaceMembe
   if ('userGroupId' in input) patch.user_group_id = input.userGroupId ?? null
   if ('profileLimit' in input) patch.profile_limit = input.profileLimit ?? null
   if ('note' in input) patch.note = input.note ?? ''
-  if (Object.keys(patch).length === 0) return
+  if (Object.keys(patch).length === 0 && !shouldUpdateAuthorizations) return
   patch.updated_at = new Date().toISOString()
 
   const { data: updatedMember, error } = await getSupabase()
@@ -1389,12 +1458,40 @@ export async function updateMember(memberId: string, input: UpdateWorkspaceMembe
   if (!updatedMember) throw new Error('Không thể cập nhật thành viên')
   console.log('[Workspace:updateMember] Updated member row:', updatedMember)
 
-  if ('profileIds' in input || 'groupIds' in input) {
+  if (shouldUpdateAuthorizations) {
     const authorizationMode = await getWorkspaceAuthorizationMode(member.workspace_id)
-    await updateMemberAuthorizations(memberId, {
-      profileIds: authorizationMode === 'profile' ? uniqueStrings(input.profileIds) : [],
-      groupIds: authorizationMode === 'group' ? uniqueStrings(input.groupIds) : [],
-    })
+    try {
+      await updateMemberAuthorizations(memberId, {
+        profileIds: authorizationMode === 'profile' ? uniqueStrings(input.profileIds) : [],
+        groupIds: authorizationMode === 'group' ? uniqueStrings(input.groupIds) : [],
+      })
+    } catch (authorizationError) {
+      try {
+        // Restore from the full pre-update snapshot. Partial snapshots are unsafe:
+        // omitted nullable fields would otherwise be rewritten as null/empty.
+        await getSupabase()
+          .from('workspace_members')
+          .update({
+            role: member.role,
+            user_group_id: member.user_group_id,
+            profile_limit: member.profile_limit,
+            note: member.note,
+            status: member.status,
+            updated_at: new Date().toISOString(),
+          })
+          .eq('id', memberId)
+          .neq('role', 'owner')
+          .select('id')
+          .single()
+
+        if (previousAuthorizations) {
+          await updateMemberAuthorizations(memberId, previousAuthorizations)
+        }
+      } catch (rollbackError) {
+        console.error('[Workspace:updateMember] Rollback failed after authorization update error:', describeError(rollbackError))
+      }
+      throw authorizationError
+    }
   }
 }
 
@@ -1420,12 +1517,12 @@ export async function getMyPermissions(workspaceId = currentWorkspaceId): Promis
   if (member?.user_group_id) {
     const { data: group, error: groupError } = await getSupabase()
       .from('workspace_user_groups')
-      .select('description')
+      .select('permission_overrides')
       .eq('id', member.user_group_id)
       .single()
 
     if (groupError) throw groupError
-    const groupPermissions = parseGroupPermissions(group?.description)
+    const groupPermissions = normalizePermissionOverrides(group?.permission_overrides)
     if (groupPermissions) return groupPermissions
   }
 

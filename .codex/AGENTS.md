@@ -1,66 +1,138 @@
 # AGENTS.md - AI Agent Instructions
 
+Read `.codex/CODEX.md` first.
+
+Use the supporting folders when relevant:
+
+- `.codex/rules/`: durable engineering rules and invariants.
+- `.codex/maps/`: function maps and tester-oriented app maps.
+- `.codex/agents/`: repeatable QA, audit, and testing workflows.
+- `.codex/roles/`: specialist working modes.
+- `.codex/workflows/`: execution flows for common task types.
+- `.codex/skills/`: reusable skills combining rules, roles, workflows, and checklists.
+- `.codex/checklists/`: pre-edit, pre-final, security, and UI checks.
+
+Keep credentials, auth files, sessions, logs, caches, and local runtime state private.
+
+## Agent System
+
+Quick links:
+
+- `.codex/maps/app-function-map.md`
+- `.codex/agents/README.md`
+- `.codex/agents/tester-agent.md`
+- `.codex/agents/bug-hunter.md`
+- `.codex/agents/security-audit.md`
+- `.codex/agents/workspace-scope-audit.md`
+- `.codex/agents/rls-audit.md`
+- `.codex/agents/ui-consistency-audit.md`
+- `.codex/agents/regression-test-planner.md`
+
+When asked to "run an agent", read that agent file and execute its workflow exactly.
+
+When asked to test like a QA tester, start from `.codex/maps/app-function-map.md` and `.codex/agents/tester-agent.md`.
+
+Agents report first. They must not modify app code unless the user explicitly asks for implementation.
+
 ## Critical: Read Before Coding
 
 ### Authorization & Security
 Before modifying workspace, member, profile, or authorization code:
-- **MUST READ**: `.codex/rules/authorization/user-group-scope.md`
-- **MUST READ**: `.codex/skills/vibe-security-scan.md`
 
-**Key Invariant**: User Group is the PRIMARY visibility boundary. Role does NOT bypass User Group scope.
+- MUST READ: `.codex/rules/authorization/user-group-scope.md`
+- MUST READ: `.codex/rules/authorization/profile-authorization.md`
+- MUST READ: `.codex/rules/backend/ipc-security.md`
+
+Key invariant: User Group is the primary visibility boundary. Role does not bypass User Group scope.
 
 ### Database Operations
 Before modifying schema, RLS policies, or migrations:
-- **MUST READ**: `.codex/rules/database/rls-policies.md`
-- **MUST READ**: `.codex/rules/database/migration-workflow.md`
 
-**Key Invariant**: RLS is the PRIMARY security boundary. Never bypass RLS without explicit justification.
+- MUST READ: `.codex/rules/database/rls-policies.md`
+- MUST READ: `.codex/rules/database/migration-workflow.md`
 
-### Backend/IPC Operations
+Key invariant: RLS is a source-of-truth security boundary. Do not disable RLS.
+
+### Backend / IPC Operations
 Before modifying IPC handlers or workspace operations:
-- **MUST READ**: `.codex/rules/backend/ipc-security.md`
-- **MUST READ**: `.codex/rules/backend/workspace-management.md`
 
-**Key Invariant**: Always validate workspace scope and authorization in IPC handlers.
+- MUST READ: `.codex/rules/backend/ipc-security.md`
+- MUST READ: `.codex/rules/backend/workspace-management.md`
 
-### Frontend/UI Operations
+Key invariant: every IPC must validate workspace scope, user group scope, owner/non-owner status, and target authorization.
+
+### Frontend / UI Operations
 Before modifying Members page or workspace UI:
-- **MUST READ**: `.codex/rules/frontend/members-page.md`
 
-**Key Invariant**: Filter owners from manageable lists. Reset selectedGroup on workspace change.
+- MUST READ: `.codex/rules/frontend/members-page.md`
+- MUST READ: `.codex/rules/frontend/dialogs-and-toasts.md`
+
+Key invariant: success toast only after backend-confirmed mutation and required refresh complete.
 
 ## Quick Reference
 
-### When Working On...
-- **Members feature**: Read `rules/frontend/members-page.md` + `rules/authorization/user-group-scope.md`
-- **Profiles/profile groups**: Read `rules/authorization/profile-authorization.md` + `rules/authorization/user-group-scope.md`
-- **Invitations**: Read `rules/backend/workspace-management.md` + `rules/database/rls-policies.md`
-- **SQL migrations**: Read `rules/database/migration-workflow.md`
-- **IPC handlers**: Read `rules/backend/ipc-security.md`
-- **RLS policies**: Read `rules/database/rls-policies.md`
+When working on:
 
-### Forbidden Actions
-- ❌ Never create parallel authorization systems
-- ❌ Never use workspace name for queries (always use workspace.id)
-- ❌ Never allow NULL userGroupId for non-owner members
-- ❌ Never bypass User Group scope with role checks
-- ❌ Never log secrets (API keys, tokens, cookies, sessions)
-- ❌ Never skip workspace validation in IPC handlers
+- Members feature: read `rules/frontend/members-page.md` + `rules/authorization/user-group-scope.md`.
+- Profiles/profile groups: read `rules/authorization/profile-authorization.md` + `rules/authorization/user-group-scope.md`.
+- Invitations: read `rules/backend/workspace-management.md` + `rules/database/rls-policies.md`.
+- SQL migrations: read `rules/database/migration-workflow.md`.
+- IPC handlers: read `rules/backend/ipc-security.md`.
+- RLS policies: read `rules/database/rls-policies.md`.
+- Dialogs/toasts: read `rules/frontend/dialogs-and-toasts.md`.
 
-### Always Remember
-1. User Group is PRIMARY visibility boundary
-2. RLS is PRIMARY security boundary
-3. currentWorkspaceId drives all data loading
-4. Validate workspace scope in every IPC handler
-5. Check authorization before mutations
-6. Reload all data after mutations
+## Forbidden Actions
+
+- Never create parallel authorization systems.
+- Never use workspace name for queries; use workspace id.
+- Never allow null `userGroupId` for non-owner members.
+- Never bypass User Group scope with role checks.
+- Never log secrets: API keys, tokens, cookies, sessions, passwords, proxy credentials.
+- Never skip workspace validation in IPC handlers.
+- Never use native `alert`, `confirm`, or `prompt` in renderer UI.
+
+## Always Remember
+
+1. User Group is the primary visibility boundary.
+2. Role controls actions only inside that user group.
+3. Only workspace owner bypasses user group scope.
+4. Backend + RLS are source of truth.
+5. `currentWorkspaceId` drives workspace-scoped data loading.
+6. Validate authorization before mutations.
+7. Reload relevant data after confirmed mutations.
 
 ## Maintenance Workflow
 
 After implementing:
-- Feature with authorization → Update `rules/authorization/`
-- Database migration → Update `rules/database/`
-- IPC handler → Update `rules/backend/`
-- UI component → Update `rules/frontend/`
+
+- Feature with authorization: update `rules/authorization/`.
+- Database migration: update `rules/database/`.
+- IPC handler: update `rules/backend/`.
+- UI component: update `rules/frontend/`.
+- New QA/audit domain: update `.codex/maps/` or `.codex/agents/`.
 
 Always update related rule files when behavior changes.
+
+## Quality Assurance
+
+Before major releases:
+
+```text
+Run Tester Agent using app-function-map. Report only. Do not change code.
+Run Bug Hunter Agent. Report only. Do not change code.
+Run Security Audit Agent. Report only.
+Run RLS Audit Agent. Report only.
+```
+
+After authorization changes:
+
+```text
+Run Workspace Scope Audit Agent. Report only.
+Run Security Audit Agent for IPC handlers. Report only.
+```
+
+After database migrations:
+
+```text
+Run RLS Audit Agent for latest migrations. Report only.
+```

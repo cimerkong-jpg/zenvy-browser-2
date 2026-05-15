@@ -31,6 +31,16 @@ function writeHistory(records: TaskHistoryRecord[]): void {
   writeFileSync(getHistoryPath(), JSON.stringify(records, null, 2), 'utf-8')
 }
 
+function recordMatchesScope(
+  record: TaskHistoryRecord,
+  workspaceId?: string | null,
+  allowedProfileIds?: ReadonlySet<string>
+): boolean {
+  if (workspaceId && record.workspaceId !== workspaceId) return false
+  if (allowedProfileIds && !allowedProfileIds.has(record.profileId)) return false
+  return true
+}
+
 export function addHistoryRecord(record: Omit<TaskHistoryRecord, 'id'>): TaskHistoryRecord {
   const records = readHistory()
   const entry: TaskHistoryRecord = { ...record, id: uuidv4() }
@@ -40,14 +50,20 @@ export function addHistoryRecord(record: Omit<TaskHistoryRecord, 'id'>): TaskHis
   return entry
 }
 
-export function getHistory(): TaskHistoryRecord[] {
-  return readHistory()
+export function getHistory(workspaceId?: string | null, allowedProfileIds?: ReadonlySet<string>): TaskHistoryRecord[] {
+  return readHistory().filter((record) => recordMatchesScope(record, workspaceId, allowedProfileIds))
 }
 
-export function deleteHistoryRecord(id: string): void {
-  writeHistory(readHistory().filter((r) => r.id !== id))
+export function deleteHistoryRecord(id: string, workspaceId?: string | null, allowedProfileIds?: ReadonlySet<string>): boolean {
+  const records = readHistory()
+  const next = records.filter((record) => !(record.id === id && recordMatchesScope(record, workspaceId, allowedProfileIds)))
+  writeHistory(next)
+  return next.length !== records.length
 }
 
-export function clearHistory(): void {
-  writeHistory([])
+export function clearHistory(workspaceId?: string | null, allowedProfileIds?: ReadonlySet<string>): number {
+  const records = readHistory()
+  const next = records.filter((record) => !recordMatchesScope(record, workspaceId, allowedProfileIds))
+  writeHistory(next)
+  return records.length - next.length
 }

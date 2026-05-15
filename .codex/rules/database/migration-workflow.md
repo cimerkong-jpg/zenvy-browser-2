@@ -133,6 +133,9 @@ where schemaname = 'public'
 order by policyname;
 ```
 
+### 6. Persistence Confirmation
+No mutation may report success unless the intended persistence layer confirmed the change. For Supabase-backed data, use `insert/update/delete/upsert ... select().single()` or an equivalent affected-row verification. If a flow is intentionally local-first/offline, the caller must receive an explicit `pendingSync` or `failedSync` state instead of normal success.
+
 ## RPC Functions
 
 ### Pattern: Safe RPC with Qualified Columns
@@ -190,6 +193,9 @@ $$;
 - [ ] Update related documentation
 - [ ] Update `.codex/rules/` if behavior changed
 - [ ] Archive migration file
+
+## Changelog
+- 2026-05-15: Added persistence-confirmation invariant for Supabase-backed mutations and explicit sync-state requirement for local-first flows.
 
 ## Common Issues
 

@@ -702,13 +702,17 @@ export default function AutomationPage({ subPage }: { subPage: AutoSub }) {
 
   const saveScript = async () => {
     if (!draftName.trim()) { toast.error('Tên script không được để trống'); return }
-    if (isNew) {
-      const created = await window.api.scripts.create({ name: draftName.trim(), description: draftDesc.trim(), code: draftCode })
-      toast.success('Đã tạo script'); await loadScripts()
-      setSelected(created); setIsNew(false); setEditMode(false); setIsDirty(false)
-    } else if (selected) {
-      const updated = await window.api.scripts.update(selected.id, { name: draftName.trim(), description: draftDesc.trim(), code: draftCode })
-      if (updated) { setSelected(updated); toast.success('Đã lưu'); await loadScripts(); setEditMode(false); setIsDirty(false) }
+    try {
+      if (isNew) {
+        const created = await window.api.scripts.create({ name: draftName.trim(), description: draftDesc.trim(), code: draftCode })
+        await loadScripts(); toast.success('Đã tạo script')
+        setSelected(created); setIsNew(false); setEditMode(false); setIsDirty(false)
+      } else if (selected) {
+        const updated = await window.api.scripts.update(selected.id, { name: draftName.trim(), description: draftDesc.trim(), code: draftCode })
+        if (updated) { setSelected(updated); await loadScripts(); toast.success('Đã lưu'); setEditMode(false); setIsDirty(false) }
+      }
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : 'Không thể lưu script')
     }
   }
 
@@ -720,10 +724,14 @@ export default function AutomationPage({ subPage }: { subPage: AutoSub }) {
   const deleteScript = async (s: AutomationScript) => {
     const confirmed = await dialog.confirmDelete('Xóa script', `Xóa "${s.name}"?`)
     if (confirmed) {
-      await window.api.scripts.delete(s.id)
-      toast.success('Đã xóa')
-      await loadScripts()
-      if (selected?.id === s.id) { backToGrid() }
+      try {
+        await window.api.scripts.delete(s.id)
+        await loadScripts()
+        toast.success('Đã xóa')
+        if (selected?.id === s.id) { backToGrid() }
+      } catch (error) {
+        toast.error(error instanceof Error ? error.message : 'Không thể xóa script')
+      }
     }
   }
 
@@ -749,8 +757,12 @@ export default function AutomationPage({ subPage }: { subPage: AutoSub }) {
   const saveVars = async (profileId: string) => {
     const p = profiles.find((x) => x.id === profileId)
     if (!p) return
-    await window.api.profiles.setVariables(profileId, { ...(p.variables ?? {}), ...varsOverride })
-    await refreshStore(); toast.success('Đã lưu biến vào profile')
+    try {
+      await window.api.profiles.setVariables(profileId, { ...(p.variables ?? {}), ...varsOverride })
+      await refreshStore(); toast.success('Đã lưu biến vào profile')
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : 'Không thể lưu biến vào profile')
+    }
   }
 
   // ── Scheduler ──────────────────────────────────────────────────────────────
@@ -758,13 +770,17 @@ export default function AutomationPage({ subPage }: { subPage: AutoSub }) {
     if (!schedScriptId || !schedProfileIds.length) { toast.error('Chưa đủ thông tin'); return }
     const script = scripts.find((s) => s.id === schedScriptId)
     if (!script) return
-    await window.api.scheduler.create({
-      scriptId: script.id, scriptName: script.name, profileIds: schedProfileIds, type: schedType,
-      runAt: schedType === 'once' && schedRunAt ? new Date(schedRunAt).getTime() : undefined,
-      intervalMs: schedType === 'interval' ? schedIntervalMs : undefined,
-    })
-    toast.success('Đã tạo lịch'); await loadTasks()
-    setShowSchedForm(false); setSchedScriptId(''); setSchedProfileIds([])
+    try {
+      await window.api.scheduler.create({
+        scriptId: script.id, scriptName: script.name, profileIds: schedProfileIds, type: schedType,
+        runAt: schedType === 'once' && schedRunAt ? new Date(schedRunAt).getTime() : undefined,
+        intervalMs: schedType === 'interval' ? schedIntervalMs : undefined,
+      })
+      await loadTasks(); toast.success('Đã tạo lịch')
+      setShowSchedForm(false); setSchedScriptId(''); setSchedProfileIds([])
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : 'Không thể tạo lịch')
+    }
   }
 
   // ── Filtered ───────────────────────────────────────────────────────────────
@@ -1296,14 +1312,25 @@ export default function AutomationPage({ subPage }: { subPage: AutoSub }) {
                     </p>
                   </div>
                   <div className="flex shrink-0 items-center gap-2">
-                    <button onClick={async () => { await window.api.scheduler.toggle(task.id, !task.enabled); loadTasks() }}
+                    <button onClick={async () => {
+                      try {
+                        await window.api.scheduler.toggle(task.id, !task.enabled)
+                        await loadTasks()
+                      } catch (error) {
+                        toast.error(error instanceof Error ? error.message : 'Không thể cập nhật lịch')
+                      }
+                    }}
                       className={`rounded-lg px-3 py-1.5 text-xs font-medium transition-colors ${task.enabled ? 'border border-white/[0.08] text-slate-500 hover:bg-white/[0.04]' : 'bg-[#7C3AED]/70 text-white hover:bg-[#7C3AED]'}`}
                     >{task.enabled ? 'Tắt' : 'Bật'}</button>
                     <button onClick={async () => {
                       const confirmed = await dialog.confirmDelete('Xóa lịch', `Xóa lịch chạy "${task.scriptName}"?`)
                       if (confirmed) {
-                        await window.api.scheduler.delete(task.id)
-                        loadTasks()
+                        try {
+                          await window.api.scheduler.delete(task.id)
+                          await loadTasks()
+                        } catch (error) {
+                          toast.error(error instanceof Error ? error.message : 'Không thể xóa lịch')
+                        }
                       }
                     }}
                       className="rounded-lg border border-white/[0.06] p-1.5 text-slate-700 hover:border-red-500/20 hover:text-red-400 transition-colors"
@@ -1332,8 +1359,8 @@ export default function AutomationPage({ subPage }: { subPage: AutoSub }) {
                   const confirmed = await dialog.confirmDelete('Xóa lịch sử', 'Xóa toàn bộ?')
                   if (confirmed) {
                     await window.api.history.clear()
+                    await loadHistory()
                     toast.success('Đã xóa')
-                    loadHistory()
                   }
                 }}
                   className="rounded-lg border border-white/[0.07] px-3 py-2 text-xs text-slate-500 hover:border-red-500/20 hover:text-red-400 transition-colors"

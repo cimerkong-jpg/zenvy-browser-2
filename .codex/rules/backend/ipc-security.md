@@ -231,6 +231,19 @@ ipcMain.handle('profiles:delete', async (_, profileId: string) => {
 })
 ```
 
+### Runtime, History, and Scheduler State
+Runtime state is workspace data. It must be filtered in the main process before it reaches the renderer.
+
+Required:
+- `browser:running` returns only running profile IDs that belong to the current workspace and are profile-authorized for the current member.
+- `history:getAll`, `history:delete`, and `history:clear` are scoped by current workspace and authorized profile IDs.
+- Scheduled task execution re-checks workspace membership, User Group scope, role permission, and profile authorization at execution time.
+
+Forbidden:
+- Returning global running profile IDs to the renderer.
+- Returning automation history without `workspaceId` and profile authorization filtering.
+- Running a scheduled task only because it was authorized when it was created.
+
 ## Forbidden Patterns
 
 ### ❌ Never Skip Workspace Validation
